@@ -1,0 +1,128 @@
+---
+title: "t distribution and why we care"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(list(digits = 4, show.signif.stars = F, show.coef.Pvalues = FALSE))
+```
+
+# t distribution and why we care
+
+
+Let's start with sampling observations from a population, where the null hypothesis of no difference between the population and the hypothesized value is in fact true.
+
+ That is, the true population mean $\bar{x}$ is no different than $\mu$.
+
+This tutorial is designed to explain what the t distribution is about, and how it works.
+
+```{r}
+StandardError <- function(x) {sd(x)/sqrt(length(x))}
+```
+
+
+In this function we are going to generate a sample from a normal distribution with known mean and sd $\sim N(\mu = 172, \sigma = 5)$. We will then compare it to our "hypothesis" value $H$. Since we have defined that there is no difference between the hypothesis mean  and our population mean $H = \mu$ for our simulation, we know that (in principle) there will be no differences, even though for each simulated sample there will likely be a distribution of observed differences due to the effects of sampling.
+
+Please note that this is effectively a one sample t-test. We could do this just as well with a two sample t-test as well (just define two samples from the same population and use the pooled standard error). But for our purposes this is a bit simpler.
+
+```{r}
+SamplingFunction_t <- function(n = 10, mean = 172, sd = 5, hypothesis = 172) {
+  
+ 	one_sample_from_population <- rnorm(n, mean = mean, sd = sd)
+ 	
+ 	difference <- mean(	one_sample_from_population) - hypothesis
+ 	
+ 	t <- difference/StandardError(one_sample_from_population)
+ 	
+ 	return(c(mean=mean(one_sample_from_population), 
+ 	  SE = StandardError(one_sample_from_population),
+ 	  difference = difference, t = t))
+ }
+```
+
+
+let's use a simulation to examine this. Replicating the sampler for $t$, I have transposed the output, and turned the matrix into a data frame (for ease of plotting).
+
+```{r}
+
+sample_size = 20
+samples_for_t <- data.frame(t(replicate(10000, 
+    expr = SamplingFunction_t(n = sample_size))))  # Replicating the sampler for t 
+```
+
+
+
+```{r}
+plot(density(samples_for_t$t), 
+    lwd = 2, xlab = "t", xlim = c(-4, 6), col = "purple",
+    main="simulated and theoretical values of t, Z") # The distribution of t-values from repeated sampling
+
+# Let's compare this to our theoretical expectation of the t-distribution
+curve(dt(x, df = (sample_size - 1)), -4 , 4, 
+      add = T, col = "red", 
+      lwd = 2, lty = 2) # Note the degrees of freedom (df)!!!!! 
+ 
+# It is important to note this is not quite a standard normal (Z) distribution.
+curve(dnorm(x),-4, 4, add = T, col = "grey", lwd = 4, lty = 3)
+
+abline(v = -2, lty = 6) # line at -2 "standard deviations"
+abline(v = 2, lty = 6)  # +2 SD
+
+legend("topright", 
+       legend = c("simulated t", "theoretical t", "Z", "+/- 2 SD"), 
+       col = c("purple", "red", "grey", "black"),
+       bty = "n",
+       lwd = 2, lty = c(1, 2, 3,6))
+
+```
+
+
+### zooming into one of the tails of the distribution to get a closer look
+
+The tails matter for getting a better sense o what is going on. 
+
+```{r}
+plot(density(samples_for_t$t), 
+    lwd = 2, xlab = "t",col = "purple",
+    xlim = c(-4, -2), ylim = c(0, 0.1),
+    main="simulated and theoretical values of t, Z") # The distribution of t-values from repeated sampling
+
+# Let's compare this to our theoretical expectation of the t-distribution
+curve(dt(x, df = (sample_size - 1)), -4 , -1, 
+      add = T, col = "red", 
+      lwd = 2, lty = 2) # Note the degrees of freedom (df)!!!!! 
+ 
+# It is important to note this is not quite a standard normal (Z) distribution.
+curve(dnorm(x),-4, -1, add = T, col = "grey", lwd = 4, lty = 3)
+
+abline(v = -2, lty = 6) # line at -2 "standard deviations"
+
+legend("topright", 
+       legend = c("simulated t", "theoretical t", "Z", "+/- 2 SD"), 
+       col = c("purple", "red", "grey", "black"),
+       bty = "n",
+       lwd = 2, lty = c(1, 2, 3,6))
+
+```
+
+As the degrees of freedom (from increasing sample size) increases this will get closer (asymptotically approach) a *standard* normal distribution $Z \sim N(\mu = 0, \sigma = 1)$. You can play with this by changing the value for `sample_size`. 
+
+1. What happens to the observed $t$, and theoretical $t$ as sample size increases (try values 5, 10, 20, 30, 40)? **hint** focus on the tails of the distribution (where extreme values would be).
+
+2. Change what happens when your observations do not come from the same "distribution" as your "hypothesis". What happens to your observed values for $t$ compared to the theoretical values? **hint** focus again on the tails of the distribution.Please explain Why.
+
+3. Why do we care about the probabilities in the tails of the distributions?
+
+4. Based on this, when do you think a *t distribution* is best to be used as compared to a standard normal (Z) distribution?
+ 

@@ -1,0 +1,183 @@
+---
+title: "BIO708 Probability and Expectations in R"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 5)
+```
+
+# Expectations of distributions in R
+
+## example with a poisson distribution
+
+Let's start with a poisson distribution.
+
+
+What is the Expected value for a poisson distribution with a lambda = 5?
+
+We can print out all of the probabilities for each discrete value from 0 to whatever value. Here it is from 0 to 20
+```{r}
+dpois(0:20, lambda = 5)
+```
+
+So for our random variable $X$ distributed $\sim pois(\lambda = 5)$, the probability of observing a value of 4 is $P(X = 4) =$ `r dpois(4, lambda = 5)`, while $P(X = 8) =$ `r dpois(8, lambda = 5)`.
+
+This is much easier to make sense of in a plot (from 0 to 100):
+
+```{r}
+barplot(dpois(0:20, lambda = 5) ~ c(0:20), 
+        xlab = "value of x", 
+        ylab = "probability of x",
+        main = "poisson PMF, lambda = 5")
+```
+
+Now we just multiply the probabilities that each value of x occurs $P(X = x_i)$ by the value of $x$ itself. Obviously we don't want to calculate this all the way to $\infty$ so let's just do it from 0 to 100 as an approximation.
+
+```{r}
+sum(dpois(0:100, lambda = 5) * 0:100)
+```
+
+Even when we only go to 20 we get a good enough approximation.
+
+```{r}
+sum(dpois(0:20, lambda = 5) * 0:20)
+```
+
+So, in relations to our slide our $x_i$ values are just the integers $X = 0,1,2,..,100$ and $P(X = x_i)$ (the probability of $x_i$ occurring) is what we get from `dpois`.
+
+We can check this by generating random numbers from this distribution and calculating the mean
+
+```{r}
+random_values_poisson_5 <- rpois(1000000, 5)
+
+barplot(table(random_values_poisson_5)/length(random_values_poisson_5),
+        ylab = "relative frequency of x occurring",
+        xlab = "value of x",
+        main = "1000000 random values: poisson, lambda = 5")
+
+mean(random_values_poisson_5)
+```
+
+
+Why does this not equal 5?
+
+```{r}
+sum(dpois(0:10, lambda = 5) * 0:10) # explain what is happening?
+```
+
+Remember that the sum of the probabilites for all possible values (from 0 to $\infty$) = 1.
+
+$$
+\sum_{i=0}^{\infty}P(X=x_i) = 1
+$$
+
+Which we want to approximate (since we are not going to infinity).
+
+```{r}
+sum(dpois(0:100, lambda = 5))
+sum(dpois(0:20, lambda = 5))
+
+sum(dpois(0:10, lambda = 5))
+```
+
+So when we only go up to a value of $x_i = 10$ then we don't get a good approximation of all the probability mass, but even just going from 0 to 20 we do a good approximation!
+
+
+## How about for a Gaussian normal distribution
+
+As with any continuous distribution by "definition" $P(X = x_i) = 0$. So mathematically we tend to work in ranges of values $P( x_i \leq X \leq x_j)$. But in R functions like `dnorm` just approximate what is going on.
+
+Remember that just like in the case of the discrete probability mass function, the sum (in this case really the integral) of all the probabilities will equal 1.
+
+$$
+\int_{-\infty}^{\infty}p(x_i) = 1
+$$
+
+But we can use the same general approach as we used before for a discrete distribution like the poisson.
+
+Let use $\sim N(\mu = 20, \sigma = 2)$ as our distribution.
+
+```{r}
+curve(pnorm(x, mean = 20, sd  = 2), 10, 30,
+      ylab = "Cumulative probability", col = "red")
+
+curve(expr = dnorm(x, mean = 20, sd = 2), from = 10, to = 30, 
+      lwd = 2, ylim = c(0, 0.2),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+```
+
+What if we want to ask what the probability of observing a value between 19 and 21 from this distribution?
+
+
+```{r echo = F, include = T}
+curve(dnorm(x, mean = 20, sd = 2), 10, 30, 
+      lwd = 3, ylim = c(0, 0.2),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+
+
+shade_x <- c(19, seq(19, 21, 0.01), 21)
+shade_y <- c(0, dnorm(seq(19, 21, 0.01), 20, 2), 0)
+
+polygon(shade_x, shade_y, col = 'grey60', border = NA)
+```
+
+First let's ask ourselves how we would do it by simulating values from this distribution:
+
+```{r}
+sim_N_20_2 <- rnorm(1000000, mean = 20, sd = 2)
+
+hist(sim_N_20_2)
+
+length(sim_N_20_2[sim_N_20_2 >= 19 & sim_N_20_2 <= 21])/length(sim_N_20_2)
+```
+
+We just count the  number of simulated values between 19 and 21 and divide this by the total number of simulated values.
+
+Using the function pnorm (which allows us to compute cumulative probabilities) we can compute the cumulative probability less than 21 and subtract the cumulative probability for values less than 19. This difference is the probability of a value being between 19 and 21.
+
+```{r}
+pnorm(21, 20, 2, lower.tail = TRUE) - pnorm(19, 20, 2, lower.tail = TRUE)
+```
+
+### Expectation for a continuous distribution
+
+How do we get the Expectation for this distribution given that it is the integral?
+
+$$
+\int_{-\infty}^{\infty}p(x_i)x_i
+$$
+
+Well the integral is like  a super summation in this case. So we can approximate the values using `sum`
+But to get the approximate expectation for the mean, we use `dnorm` just like we use `dpois`.
+```{r}
+xvals <- 10:30
+sum(dnorm(xvals, mean = 20, sd = 2) * xvals)
+```
+
+
+If you really care though you could  use the `integrate` function to compare that you are getting close enough... But usually this is not necessary.
+```{r}
+integrand  <- function(x) {dnorm(x, mean = 20, sd = 2)*x}
+
+integrate(integrand , lower = -Inf, upper = Inf)
+integrate(integrand , lower = 10, upper = 30)
+```
+
+You can play with setting limits and see even if we just sum or integrate over a narrower set of values (say from 10 to 30) we get pretty much the same result. Can you explain why?
+

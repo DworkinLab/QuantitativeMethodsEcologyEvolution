@@ -1,0 +1,170 @@
+---
+title: "Confidence Intervals, meaning and coverage"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options:
+  chunk_output_type: console
+---
+
+
+# Confidence Intervals, their (frequentist) meaning and coverage.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(list(digits = 4, show.signif.stars = F, show.coef.Pvalues = FALSE))
+```
+
+## functions we may need 
+
+```{r}
+StandardError <- function(x) {sd(x)/sqrt(length(x))} 
+# Just computing the standard error
+```
+
+Helping to explain confidence intervals from a simulation point of view...
+
+Let's start with the view from a sample from a population. 
+
+Say we sampled 150 individuals from a population
+
+```{r}
+new_sample <- rnorm(n = 150, mean = 72, sd = 4)
+
+plot(density(new_sample), 
+    ylim = c(0, 0.15), xlim = c(55, 90), 
+    lwd = 2, xlab = "values for new sample",
+    main = "")
+
+curve(dnorm(x, mean = 72, sd = 4), 55, 90, 
+    add = T, col="red", lty=3, lwd=2) # The "true" population distribution
+
+abline(v = mean(new_sample) - sd(new_sample), 
+    col="grey", lwd=2, lty=5)
+
+# above the mean
+abline(v = mean(new_sample) + sd(new_sample), 
+    col="grey", lwd=2, lty=5)
+
+abline(v = mean(new_sample) - 2*sd(new_sample), 
+    col = "grey", lwd = 2, lty = 6)
+
+# above the mean
+abline(v = mean(new_sample) + 2*sd(new_sample), 
+    col="grey", lwd = 2, lty = 6)
+
+legend("topright", col = c("black", "red", "grey","grey"), 
+    lwd = 2, lty = c(1,3,5,6), 
+    legend = c("data", "theoretical", "1 SD", "2 SD"))
+```
+
+
+ In general ~ 68% of observations fall within +/- SD of the mean for a Normal distribution. And in general ~96% of observations fall within +/- 2 SD of the mean
+
+
+
+## How is this useful to us?
+
+
+ Remember that the sampling distribution of the means (or other quantaties you estimate) is approximately normal.
+ 
+ So if we generate a distribution of sampling means:
+ 
+ 
+```{r}
+sample_means <- replicate(1000, 
+    expr = mean(rnorm(n = 150, mean = 20, sd = 5)))
+    
+plot(density(sample_means, bw = 0.15),
+     xlab = "estimated means",
+     main = "sampling distribution of estimated means")
+ 
+abline(v = mean(sample_means) - (2 * sd(sample_means)), col = "grey", lwd = 2, lty = 6)
+
+# above the mean
+abline(v = mean(sample_means) + (2 * sd(sample_means)), col = "grey", lwd = 2, lty = 6)
+```
+
+How do we interpret this figure? Understanding this is extremely important for understanding inferential statistics....
+
+
+Question 1A - What do you expect to happen to the standard deviation for the distribution of sample_means as the sample size decreases from 50 to 20? 
+
+
+Question 1B - What does this do to the confidence intervals, Why?  
+
+Question 1C - Explain why this (changes in sample size) is useful for inferential statistics.
+
+
+## Understanding the classic definition of confidence intervals based on sampling theory
+
+Let us again repeatedly sample from a distribution with mean 20, and sd=5 ($\sim N(\mu = 20, \sigma = 5)$)
+
+
+In this function we are going to generate a sample from a normal distribution with known mean and sd. We will then return the mean and standard error from that sample.
+
+```{r}
+SamplingFunction <- function(n = 20, mean = 20, sd = 5) {
+ 	one.sample.from.population <- rnorm(n, mean = mean, sd = sd)
+ 	return(c(mean = mean(one.sample.from.population), 
+ 	    SE = StandardError(one.sample.from.population)))
+ }
+
+# the t() is for transpose, which just transposes the matrix generated.
+samples_for_CI <- t(replicate(100, 
+                              expr = SamplingFunction(n = 150)))  # Replicating the sampler
+```
+
+
+Now we generate the approximate 95% confidence intervals (based on Z distribution, so **only** valid for large sample sizes)
+
+```{r}
+lower <- (samples_for_CI[,1]) - (1.96*samples_for_CI[,2] )
+# The mean minus 1.96*the standard error of the mean.
+
+upper <- (samples_for_CI[,1]) + (1.96*samples_for_CI[,2] )
+# The mean plus 1.96*the standard error of the mean.
+```
+
+We can now plot the "best" estimates along with the approximate 95% Confidence intervals for each
+
+```{r}
+replicates <- 1:length(samples_for_CI[,1]) # just creating a variable for the number of replicates.
+
+plot(samples_for_CI[,1] ~ replicates, 
+     ylab = "sample values", pch = 20,
+    ylim = c(min(lower), max(upper)), # Just setting the lower and upper values of the Y axis
+    main =" Demonstrating the meaning of (frequentist) confidence intervals")
+
+
+# generate "error bars" representing Confidence Intervals
+for ( i in 1:length(samples_for_CI[,2])) {
+  lines(x = c(replicates[i],replicates[i] ), 
+        y = c(lower[i], upper[i]), lwd = 2.75, col = "grey")  
+}
+
+# Given that we know the true value for the mean (20 in this case, unless you changed it.) We can plot this on as well
+abline(h = 20, col = "red", lwd = 3, lty = 4) 
+```
+
+### Please answer the following questions.
+
+Question 2A - Change the number of observations per sample (currently set at n = 50) to 20. What happens to the interval size as you decrease or increase this? (Generate some nice plots for my simple mind). Explain why. How would this differ if you used the generalized confidence intervals (using the $t_{\frac{\alpha}{2}, df}$ instead of the *standard* normal $z$ distribution)?
+
+Question 2B - Is the interval size for our estimates confidence intervals the same for each simulated sample? Explain why or why not.
+
+
+Question 3A - **coverage:** Approximately what proportion of the time do the confidence intervals for the sample (with n = 50) overlap with the "true" population parameter (in this example, $\mu = 20$)? 
+
+Question 3B - What would you expect this proportion to converge upon if you did 100,000 simulated samples (each sample with 50 observations)? 
+
+Question 4 (optional) - Instead of using the approximate confidence intervals (based on $1.96 \times SE$), use the generalized confidence interval function (written in a seperate script) to do the plot of the confidence intervals that you used from question 2. This may take a bit of re-coding, so you may want to write it in a fresh script.  **Alteratively**, explain what happens to the width of the intervals (and to their coverage) if you use the generalized confidence intervals $SE \times t_{\frac{\alpha}{2}, df}$ instead? For a small sample size (say $n = 10$)? How about for  $n = 150$?
+
+

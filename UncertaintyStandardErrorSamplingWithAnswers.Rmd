@@ -1,0 +1,684 @@
+---
+title: "SamplingStatisticsStandardErrors"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output: 
+  html_document: 
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+# BIO708 Sampling statistics, and the standard error.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3)
+```
+
+
+## goals for today
+
+ Today in class you will work in groups to perform some simple simulations with three goals in mind:
+ 
+Goal 1 - Be able to write your own simple simulations in R to learn statistical concepts.
+
+Goal 2 - To develop a sense (from the simulations) about an important "law" in statistics. This law tells us about what we expect to observe about estimated values (such as an sample mean), relative to the "true" (population) parameter as sample size increases. 
+  	( I expect you to tell me the name of the law).
+  	
+Goal 3 - To get a sense of how different estimates of the "moments" of a distribution (in this case the sample mean and the sample std. dev.) approach the "true" values with increasing sample size.
+
+As a group please generate a .Rmd file with your answers and attach it to me in teams chat to take a look at the end of class.
+
+## What? me? normal?
+
+You may have in previous classes discussed the idea of the *Central Limit Theorem*. Basically, why a) so many distributions are approximately Gaussian (Normal) and why examining the distribution of means of variables that are not normal can appear normal.
+
+For the moment (because of time limitations) we will just take these to be reasonable assumptions.
+
+ Instead I want you to focus on what we might expect to see (on average) if the variable of interest we are studying (say wing length) is approximately normal.
+ 
+ 
+```{r one_tail_t, echo = F, include = T}
+curve(dnorm(x, mean = 20, sd = 3), 8, 32, 
+      lwd = 2, ylim = c(0, 0.15),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+```
+
+
+Obvious from this is that we would expect most observations to be closer to 20, and an observation value of say x = 14 or less would be pretty unlikely. How unlikely would this value be?
+
+1. 
+
+Let's start by doing a simulation of 100000 observations from a normal distribution with a mean of 20 and sd =3 . Of these 100000 simulated observations what proportion of them have a value of 14 or less?
+
+Also worth plotting these (either a density or histogram)
+##
+
+```{r}
+x <- rnorm(100000, 20, 3)
+min(x)
+sum(x <= 14)/length(x) # works because T = 1, F = 0
+
+# or equivalently
+
+length(x[x <= 14])/length(x)
+```
+
+## plot
+```{r}
+plot(density(x), 
+     main = "plot of the 100000 observations", lwd = 2, 
+     xlab = "x")
+```
+
+
+
+2. So approximately what proportion of all of the 100000 observations were less than 14? 
+
+```{r}
+sum(x <= 14)/length(x)
+```
+
+## We can do this more exactly.
+
+We can use the pnorm function to get a more exact sense of this
+
+```{r}
+pnorm(14, mean =  20, sd = 3, lower.tail = TRUE) #  near 14
+```
+
+
+## working the other way (from tail probability)
+
+We can also ask about what value the "cutoff" would be for a tail probability of 0.0228.
+
+```{r}
+qnorm(0.0228, mean = 20, sd = 3, lower.tail = TRUE)
+```
+
+## We can also plot this
+
+
+```{r one_tail_t, echo = F, include = T}
+curve(dnorm(x, mean = 20, sd = 3), 8, 32, 
+      lwd = 3, ylim = c(0, 0.15),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+
+
+shade_x <- c(8, seq(8, 14, 0.01), 14)
+shade_y <- c(0, dnorm(seq(8, 14, 0.01), 20, 3), 0)
+
+polygon(shade_x, shade_y, col = 'grey60', border = NA)
+
+text(x = 10 ,y = 0.02, paste("less than 14"), 
+     cex = 1.2, col = "grey60")
+```
+
+
+3. Try doing all these steps, but for values greater than 23.
+
+
+```{r}
+
+sum(x >= 23)/length(x) 
+
+sum(pnorm(23, mean =  20, sd = 3, lower.tail = FALSE)) 
+
+curve(dnorm(x, mean = 20, sd = 3), 8, 32, 
+      lwd = 3, ylim = c(0, 0.15),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+
+
+shade_x <- c(23, seq(23, 31, 0.01), 31)
+shade_y <- c(0, dnorm(seq(23, 31, 0.01), 20, 3), 0)
+
+polygon(shade_x, shade_y, col = 'grey60', border = NA)
+
+text(x = 30 ,y = 0.05, paste("more than 23"), 
+     cex = 1.2, col = "grey60")
+```
+
+## But more often we want to get a sense of the middle part of the distribution
+
+
+4. For our variables of interest we are usually more interested in where most of the observations fall. In some sense our standard deviation gives us a better sense of this. 
+
+So now using the same simulated data, determine what proportion of the observations you randomly generated fall within one standard deviation on either side of the mean (i.e. $\pm 1 \times \sigma$)
+
+
+##  figure
+
+```{r one_tail_t, echo = F, include = T}
+curve(dnorm(x, mean = 20, sd = 3), 8, 32, 
+      lwd = 3, ylim = c(0, 0.15),
+      ylab = "prob",
+      xlab = expression(italic(x)),
+      main = expression(paste("x ~", italic(N), "(mean = 20, sd = 3)")))
+
+
+
+shade_x <- c(17, seq(17, 23, 0.01), 23)
+shade_y <- c(0, dnorm(seq(17, 23, 0.01), 20, 3), 0)
+
+polygon(shade_x, shade_y, col = 'grey60', border = NA)
+```
+
+## answer
+
+ Our standard deviation is 3 (that is what we used) so we can just use the mean + sd (20 +3) and the mean - sd (20 -3)
+ 
+```{r}
+sum(x >= 17 & x <= 23 )/length(x)
+```
+ 
+## How about using the pnorm function?
+
+This can be a bit more complicated with this function, but you could do something like this we can calculate the probability from the left tail for both regions (starting at 17 and 12) and subtract one from the other.
+
+```{r}
+# we can see that
+pnorm(c(17, 23), mean = 20, sd = 3)
+
+# so subtract one from the other
+pnorm(23, 20, 3) - pnorm(17, 20, 3)
+
+#also the diff function is pretty useful for this type of thing, so you can do it in one step
+diff(pnorm(c(17, 23), mean = 20, sd = 3))
+```
+
+
+## what does this tell us?
+
+So if we have lots and lots of observations we expect about 68.3% of the population to have trait values within 1 standard deviation of the mean. 
+
+5. But, 68.3% is still pretty far from all of them? What if we wanted approximately 95% of the individuals in the population? How would you figure this out? use simulation and pnorm
+
+
+
+## using qnorm
+
+Keep in mind we want a total of 95% of the area under the curve. Assuming symmetry (it is a normal distribution) then we want 0.05/2 for each tail (so 0.025 and 0.975)
+
+```{r}
+qnorm(c(0.025, 0.975), mean = 20, sd = 3)
+```
+
+
+We can check this with pnorm
+
+```{r}
+pnorm(c(14.1, 25.9), mean = 20, sd = 3)
+
+pnorm(25.9, mean = 20, sd = 3) - pnorm(14.1, mean = 20, sd = 3)
+
+#also the diff function is pretty useful for this type of thing, so you can do it in one step
+diff(pnorm(c(14.1,25.9), mean = 20, sd = 3))
+
+```
+
+## using your simulated observations...
+
+What proportion of observations are within 2 standard deviations?
+
+So we now go from (20 - 6 = 14) to (20 + 6 = 26) instead
+
+```{r}
+sum(x >= 14.1 & x <= 25.9 )/length(x)
+```
+
+6. Do the same thing, but now generate just 100 observations of data
+
+
+*ID:I wrote a function and then used replicate so you can get a sense for the variation*
+
+```{r}
+sample100vals <- function(n = 100, mn = 20, stdev = 3) {
+  x1 <- rnorm(100, mn, stdev)
+  sum(x1 >= 14.1 & x1 <= 25.9 )/length(x1)}
+
+within_2sd <- replicate(100, 
+          sample100vals( n = 100, mn = 20, stdev = 3))
+
+range(within_2sd)
+```
+
+
+Repeat this process a few times (generating new x values each time).
+
+How much do things change?
+
+*With these relatively small samples, we don't always get 95% of the observations falling within 2 standard deviations of the mean. As many as 0.99 and low as 0.88 for my run (yours might be different)*
+
+## population parameter vs. sample estimate
+
+Let' switch gears a bit and think about generating a sample from an underlying population. This will lead us into thinking about uncertaintly due to the process of sampling (and from there to the standard error)
+
+We find a new species *Critter mccritteria* under a rock in my garden. They whole species is 100 individuals under this rock. I carefully measure the mass (in grams) of everyone of the individuals. Here are those values.
+
+```{r}
+set.seed(5)
+C_mc_size <- rnorm(100, mean = 2, sd = 0.25)
+set.seed(29051972) # put your birthday in daymonthyear no spaces in this.
+```
+
+7. Calculate the mean and standard deviation for these 100 individuals
+
+```{r}
+mean(C_mc_size)
+sd(C_mc_size)
+```
+
+8. Are these population parameters or sample statistics (estimates)? Explain your answer.
+
+
+*Since the entire population is the 100 individuals, these are population parameters* As such, the sd I used above is actually incorrect as the `sd` function computes the sample standard deviation (with n-1 df not n). Don't worry I was not expecting you to use anything other than sd, but know that is is technically a bit biased. A correct population parameter for the sd would be:
+
+```{r}
+population_sd <- function(x) {
+  pop_var <- sum((x- mean(x))^2)/length(x)
+  pop_sd <- sqrt(pop_var)
+  pop_sd
+}
+
+
+population_sd(C_mc_size)
+```
+
+*Which is almost the same. But if the sample size of the whole population was much smaller, the bias would be greater. Thankfully (except in pretend examples like this) we rarely have the whole population.*
+
+
+Now I am really selfish and don't want to share the data with you. You each come to my backyard, and measure a subset of the individuals as an excuse to spend time with it (it is a very cute little critter). But you only have time to measure 15 individuals. So you measure 15, and then gently return them to their spot under their rock. Each of you do this one after another (one of you, each day). (hint, the sample function will help)
+
+```{r}
+fifteen_individuals <- sample(C_mc_size, size = 15, replace = F)
+```
+
+9. Calculate the mean and standard deviation for these samples.
+
+```{r}
+mean(fifteen_individuals)
+sd(fifteen_individuals)
+```
+
+10. Are these population parameters or sample statistics.
+
+*sample statistics*
+
+11. Compare your results with everyone else? Are they the same? What is going on?
+
+*They differ a bit, because of the stochastic effects of sampling, we don't get the exact same answer. Plus each different sample of 15 will differ in the estimates of mean and sd*
+
+12. You are unhappy with how your estimates compare to each other. So you all come to the backyard (I am nice enough to make you some lemonade) and now each measure 50.
+
+```{r}
+fifty_individuals <- sample(C_mc_size, size = 50, replace = F)
+```
+
+13. Do you expect that the the values you get for the mean and standard deviation will be more similar to one another? Differ more? Explain your thinking.
+
+*Since the sample size for these samples is greater (50), we would expect these to be better estimates, and would both be closer to each other, and other samples of 50 (compared to the 15)*
+
+14. Calculate the mean and sd again.
+
+```{r}
+mean(fifty_individuals)
+sd(fifty_individuals)
+```
+
+
+This all goes to demonstrate the effect of sampling. Of course in the real world, we are almost never in a situation where we can sample every individual in a population, nor do we generally know the true values of the distribution (like mean and sd) or what distribution the data comes from.
+
+## Sampling distribution.
+
+Now let's say we go sample good old boring *D. melanogaster* out in the wild for wing length. Each of you go and sample 100 female flies.
+
+```{r}
+n <- 100
+
+x <- rnorm(n = n, mean = 2000, sd = 150) # produces a random sample of n observations from a normally distributed variable with mean = 2000 and sd = 150
+
+
+par(mfrow=c(2,1))
+plot(density(x), 
+     xlim=c(min(x),max(x)), 
+     main="distribution of a single sample of 100 observations") # Quick look at the distribution of the data
+hist(x)
+
+```
+
+Let's all share our values for mean wing length?
+
+15. Calculate the mean and the standard deviaiton of wing length for your sample.
+
+```{r}
+mean(x)
+sd(x)
+```
+
+
+## So how do we know if our estimate is any good.
+
+The standard error is the most amazingly useful thing to calculate, but really the worsed named quantity in statistics. It really is a measure of *sampling uncertainty*. In other words how representative your estimate really is, and how much uncertainty there is in your estimates due to the stochastic effects of sampling.
+
+16. Go repeat your sampling for 100. Calculate mean and sd. Do this 10 times. I made this a bit simpler with this
+
+
+```{r}
+Dist1 <- function(n = 100, mean= 2000, sd = 150){
+  x <- rnorm(n = n, mean = mean, sd = sd)
+  y <- mean(x) # Computes the mean of our randomly generated values.
+  y}
+
+Dist1()
+Dist1() # etc
+
+samples_100individuals_10samples <- replicate(10, Dist1( n = 100))
+mean(samples_100individuals_10samples)
+sd(samples_100individuals_10samples)
+```
+
+
+17. Now do the same, but where you only measure 10 wings each time. What changes? Why?
+
+
+```{r}
+samples_10individuals_10samples <- replicate(10, Dist1( n = 10))
+mean(samples_10individuals_10samples)
+sd(samples_10individuals_10samples)
+```
+
+*We see much more variation from sample mean to sample mean, because with only 10 individuals per sample, the stochastic effects of sampling are greater*
+
+18. Specifically calculate the mean of the 10 means, and the standard deviation of the 10 means.
+
+*see above*
+
+You can make your life a bit easier now by getting the computer to repeat it for you.
+
+```{r}
+replicate(10, Dist1( n = 10))
+```
+
+19. Again look at the distribution of the means (and mean of means and sd of the means.)
+
+
+## On a bigger scale.
+
+```{r}
+sample.means <- replicate(1000, 
+                          Dist1(n = 100)) # This replicates the function 1000 times. i.e. it repeatedly samples n= 100 individuals from a population and estimates the mean for 1000 samples.
+
+plot(density(sample.means), 
+     xlim=c(min(x),max(x)), 
+    main="sampling distribution for the means") 
+    # histogram of means from the repeated samples
+```
+
+20. Using this approach. I want you to vary through different sample sizes ($n$) and also trying making the standard deviation of the distribution twice as big and half as big. Each time I want you to make the density plot or histogram, and calculate the standard deviation of all of the means you have sampled.
+
+*I did this slightly differently, but hopefully clearly. I sampled either 50, 100, 200 or 400 individuals. For each sample size, I did 1000 simulations and calculated the sample mean. I then plotted the density of them. You can see that the variation among the means decreases as sample size (within each sample) increases.*
+
+```{r}
+
+par(mfrow = c(1,1))
+
+sample.means_n50 <- replicate(1000, 
+                          Dist1(n = 50)) 
+
+sample.means_n100 <- replicate(1000, 
+                          Dist1(n = 100)) 
+
+sample.means_n200 <- replicate(1000, 
+                          Dist1(n = 200)) 
+
+sample.means_n400 <- replicate(1000, 
+                          Dist1(n = 400)) 
+
+plot(density(sample.means_n50), 
+    xlim = c(min(sample.means_n50), max(sample.means_n50)), 
+    ylim = c(0, 0.06),
+    lwd = 2,
+    main="sampling distributions for the means at varying sample sizes",
+    xlab = "estimate of sample mean",
+    col = "red") 
+
+lines(density(sample.means_n100), 
+    lwd = 2, col = "blue") 
+
+lines(density(sample.means_n200), 
+    lwd = 2, col = "purple") 
+
+lines(density(sample.means_n400), 
+    lwd = 2, col = "black") 
+
+legend(x = "topleft", 
+       legend = c("50", "100", "200", "400"),
+       lty = 1,
+       col = c("red", "blue", "purple", "black"))
+```
+
+
+*An alternative way to view this is a scatterplot relating the standard deviation among sample means at each sample size, with the sample size*
+
+```{r}
+
+sample_sizes <- c(50, 100, 200, 400)
+
+sample_sizes_sd <- c(sd(sample.means_n50), 
+                     sd(sample.means_n100),
+                     sd(sample.means_n200),
+                     sd(sample.means_n400))
+
+plot( y = sample_sizes_sd, x = sample_sizes,
+      ylim = range(sample_sizes_sd),
+      xlim = range(sample_sizes),
+      ylab = "standard deviation among sample means",
+      pch = 20, cex = 3, col = "purple" )
+```
+
+*This gives a pretty clear indication that as the sample size increases, the variation among estimated means among samples decreases* 
+
+**That is, the uncertainty in our means decreases with increasing sample size!!!*
+
+*This is the basic idea of the* **standard error** *(of the mean in this case). How much uncertainty we have in whatever parameter we are estimating (again the mean in this case) due to the effects of sampling.*
+
+
+
+### An approximation for the standard error of the mean.
+
+The rub being is no one in their right mind would go and measure 100 flies, release them and then repeat this 1000 times... So how do we approximate the standard error for the estimated parameter values?
+
+This is a big area, and for virtually any statistic that you can compute, statisticians work out approximations to calculate the standard error of it.
+
+However for the arithmetic mean (average) that we have been calculating, it turns out there is a very easy approximation that you have used many times, possibly without even knowing it as we will see next!
+
+21. For one particular sample size of 100, mean and sd calculate a single sample, and calculate both the mean and standard deviation. Now take that standard deviation and divide it by the square root of the sample size
+
+```{r}
+x <- rnorm(n = 100, mean = 2000, sd = 150)
+
+x
+
+sd(x)
+
+sd(x)/sqrt(length(x))
+
+```
+
+22. Now compare that last value (the sd divided by the square root of sample size) to what happens when you do the simulation of x with those values for sample size, mean and sd 1000 times and calculate the standard deviation among the means of the 1000 distinct samples?
+
+```{r}
+sd(sample.means_n100)
+```
+
+*Pretty close, eh? So it turns out that:*
+
+$$
+\frac{s_x}{\sqrt{N}}
+$$
+
+*Is a pretty good approximation for the standard error of the mean, without us having to go and repeatedly sample 100 individuals over and over and over again! so we can just use this*
+
+```{r}
+StdErrMean <- function(x) {
+  sd(x)/sqrt(length(x))
+}
+```
+
+*Thankfully most of the time, the functions we will use will automatically calculate the standard errors. BUT we will use this approach again when we learn some monte carlo simulation approaches, the non-parametric boostrap, and if we have time using Markov Chain Monte Carlo (MCMC) for estimating our posterior distributions for Bayesian estimation*
+
+23. Repeat this, but change sample size and or standard deviation and compare.
+
+
+```{r}
+x <- rnorm(n = 400, mean = 2000, sd = 150)
+StdErrMean(x)
+
+sd(sample.means_n400)
+```
+
+24.. Why do you think this might work?
+
+*The square root of N allows for the approximating rescaling to allow it to behave similarly to the standard deviation among sample means*
+
+## Next piece
+
+Let us say we get to play the role of a deity again, and can "choose" the form and parameters for a distribution.  This distribution is ~N(mean = 20, sd = 6)
+
+You now collect samples from this population. You start by collecting 5 samples and use this to estimate the mean and sd. You then incrementally increase your sample size by 1, until you reach a sample size of 1000.
+
+Before you start the simulation EACH person in your group should answer the following questions.
+
+25. Are you estimating the sample or population mean/sd? Why?
+
+sample, random sample of the overall population
+
+26. What (if any) relationship do you expect to observe between your estimated mean and the true value for the mean as sample size increases?
+
+
+27. What (if any) relationship do you expect to observe between your estimated std dev. and the true value std. dev. as sample size increases? In what way should this differ from the mean?
+
+
+28. Now I want you as a group to write a simulator to perform the above. 
+Compute the estimated mean, standard deviation, the standard error of the mean (the standard deviation/sqrt(sample size)) and the coefficient of variation (standard deviation/mean)
+
+```{r}
+CoefVar <- function(x) {
+	sd(x)/mean(x)
+}
+
+
+# Write a function to compute the Standard error
+StdErr <- function(x) {
+	sd(x)/sqrt(length(x))
+}
+```
+
+
+For each of these produce a plot relating the estimated value to the true value (which you know since you are the diety of this computer simulations) as sample size increases.
+
+```{r}
+EstimatesLawLargeNumbers <- function(x, mn = 20, stdev = 6){
+	# generate random numbers from the distribution
+	sample_vals <- rnorm(n=x, mean = mn, sd = stdev)
+	
+	# Return the values we want to compute 
+	return(c(sample_size = x, 
+	  sample_mean = mean(sample_vals), 
+	  sample_sd = sd(sample_vals), 
+	  sample_cv = CoefVar(sample_vals), 
+	  sample_se = StdErr(sample_vals) ))
+}
+
+# Create the Vector for the different sample sizes
+sample_size <- 5:1000
+```
+
+
+
+```{r}
+samples <- t(sapply(sample_size, 
+                    EstimatesLawLargeNumbers, 
+                    simplify = T))
+```
+
+
+plot
+
+```{r}
+par(mfrow=c(2,2))
+
+plot(samples[,2] ~ samples[,1], main= "Sample Mean VS sample size", 
+    ylab= "sample mean", xlab=" sample size", pch=1)
+abline(h=20, lwd=3, col="red") # generates a horizontal line
+
+plot(samples[,3] ~ samples[,1], main= "Sample sd VS sample size", 
+    ylab= "sample sd", xlab=" sample size", pch=1 )
+abline(h=6, lwd= 3, col="red")
+
+plot(samples[,4] ~ samples[,1], main= "Sample cv VS sample size", 
+    ylab= "sample cv", xlab=" sample size", pch=1 )
+abline(h=0.3, lwd= 3, col="red")
+
+plot(samples[,5] ~ samples[,1], main= "standard error of the mean VS sample size",
+    ylab= "sample SE", xlab=" sample size", pch=1 )
+
+
+par(mfrow=c(1,1))
+```
+
+29. Now that you have run the simulations, what have you observed about the relationship between  sample size and your estimates? Does this change your answers to the questions above?
+
+30. What do you observe for the CV and SE? How does this relate to the patterns for the mean and sd? Are the patterns the same? Is there any important differences between mean and sd with increasing sample size?
+
+31. What is the name for this relationship?
+Law of large numbers
+
+32. Redo this simulation once more. Do you get the exact same result? Explain why or why not. Provide plots as well.
+
+No. stochastic.
+
+33. Redo the simulation once more but change the sd to 15. How does this change your results. Provide plots as well. Explain what the differences are why!
+ 
+```{r}
+samples_sd15 <- t(sapply(sample_size, 
+                    EstimatesLawLargeNumbers, stdev = 15,
+                    simplify = T))
+```
+ 
+ 
+```{r}
+par(mfrow=c(2,2))
+
+plot(samples_sd15 [,2] ~ samples_sd15 [,1], 
+     main= "Sample Mean VS sample size", 
+    ylab= "sample mean", xlab=" sample size", pch=1)
+abline(h=20, lwd=3, col="red") # generates a horizontal line
+
+plot(samples_sd15 [,3] ~ samples_sd15 [,1], 
+     main= "Sample sd VS sample size", 
+    ylab= "sample sd", xlab=" sample size", pch=1 )
+abline(h=15, lwd= 3, col="red")
+
+plot(samples_sd15 [,4] ~ samples_sd15 [,1], 
+     main= "Sample cv VS sample size", 
+    ylab= "sample cv", xlab=" sample size", pch=1 )
+abline(h=0.75, lwd= 3, col="red")
+
+plot(samples_sd15 [,5] ~ samples_sd15 [,1], 
+     main= "standard error of the mean VS sample size",
+    ylab= "sample SE", xlab=" sample size", pch=1 )
+
+
+par(mfrow=c(1,1))
+```
+ 

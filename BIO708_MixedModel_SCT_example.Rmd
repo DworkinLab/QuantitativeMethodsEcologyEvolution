@@ -1,0 +1,682 @@
+---
+title: "Evaluating complex linear mixed models"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+  html_document: 
+    toc: yes
+    fig_caption: yes
+    keep_md: yes
+    number_sections: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(list(digits = 4, show.signif.stars = F, show.coef.Pvalues = FALSE))
+```
+
+# Evaluating complex linear mixed models
+
+## Background
+
+Now we finally can use the SCT data for the kind of model for which it was always designed! If you go and take a look at the mixed model [originally fit in the] paper(https://onlinelibrary.wiley.com/doi/10.1111/j.1525-142X.2005.05010.x) it will be a bit different than what we discuss below. That is mostly because of some very important advances in mixed model computation.
+
+Importantly we know can fully include the random effect of our biologically interesting grouping variable (line) representing variation among strains (i.e. genetic differences) in response to both rearing temperature and the effect of the *Dll* mutation. As we will see it can still be somewhat complex to figure out what is the appropriate random effect we want. 
+
+However, as always we will start with somewhat conceptually simpler models.
+
+## R libraries we need
+
+```{r}
+library(glmmTMB)
+library(lme4)
+library(emmeans)
+library(effects)
+library(car)
+library(forcats)
+library(distributional)
+library(ggplot2)
+library(ggfortify)
+library(ggdist)
+library(broom)
+library(dotwhisker)
+library(r2glmm) # mixed model r^2 etc..
+library(lattice)
+library(corrplot)
+```
+
+## The data we will work with today.
+
+We continue using the SCT data (so read it in) to start.
+
+If you have not, you can [download](https://www.dropbox.com/s/b9o0jqdhzc8suod/dll_data.csv?dl=0) it here. Put it in the data folder.
+
+```{r}
+dll_data  <- read.csv("https://raw.githubusercontent.com/DworkinLab/DworkinLab.github.io/master/dataSets/Dworkin2005_ED/dll.csv", 
+                    header=TRUE,
+                    stringsAsFactors = TRUE)
+```
+
+## Data provenance and description
+
+This data is from an [old paper](https://onlinelibrary.wiley.com/doi/10.1111/j.1525-142X.2005.05010.x), but from a kind of experiment we still often use, so it provides a useful template for this.
+
+In this experiment I:
+
+- Was testing a theory about the evolution of canalization, using a system to release cryptic genetic variation. 
+
+- Introduced the *Dll[11]* mutation into about 25 different wild type strains via backcrossing. This mutation has some dominant phenotypes affecting leg (among other) traits, including length of segments and the number of sex comb teeth (in males).
+
+- Reared flies from each of these strains and three different temperatures.
+
+- Collected both *Dll[+]* and *Dll[11]* individuals from each of the strains from each of the temperature treatments.
+
+- For each individual, a single first (pro-thoracic) leg was dissected and three leg segments were measured along with the number of sex comb teeth.
+
+
+## What we will be using the data for.
+
+- We are going to examine how the number of sex comb teeth is influenced by the effects of overall (leg) size, rearing temperature, genotype at the *Dll*  (either *+*/*wt* or *11*/*mutant*) and genetic background (the 25 or so wild type strains). Indeed we will (hopefully) get to where we can examine how these factors all interact and interpret the output from the models. Most importantly we are now going to allow for among strain (line) variation as *random* effects in the model to estimate genetic variation in the the treatment effects.
+
+Please note that temperature (currently an integer) is in Celsius. The lengths for femur, tibia and tarsus are all in mm.
+
+```{r}
+dll_data <- na.omit(dll_data) 
+
+str(dll_data)
+
+dll_data$genotype <- relevel(dll_data$genotype, "wt") # make wt reference level
+
+dll_data$tarsus_Z <- scale(dll_data$tarsus, center = T, scale = T) # standardize tarsus
+```
+
+
+Let's add rearing temperature (temp) into the model. Often when we do temperature manipulations we do a whole range of temperatures. So we may be interested in treating temperature as a continuous predictor. However, in this study there are only two rearing temperatures. So we can treat it as either a factor or continuous and it will largely not alter the interpretation too much. Here we are treating it as a factor.
+
+```{r}
+dll_data$temp <- as.factor(dll_data$temp)
+```
+
+### Starting simply... A "pure" random effects model
+
+Let's start with a simple pure random effects mode where we want to estimate the variation among strains (i.e genetic variation). Let's examine a subset of the data, for the wild type (WT) allele of the Dll gene for the flies reared at 25C. 
+
+Let's get a sense of the variation in SCT number among the different lines (strains)
+
+```{r}
+SCT_wt_25 <- dll_data[(dll_data$genotype == "wt") & (dll_data$temp == "25"),]
+
+ggplot(SCT_wt_25, aes(x = SCT, y = line)) + 
+  geom_jitter(aes(color = line), 
+              width = 0.15, height = 0.2,
+              alpha = 0.5, show.legend = F)
+```
+
+
+As we saw in class, to estimate the pure random effects model for this we can use `lmer` (in lme4) or `glmmTMB` to fit such a model. For this really simple model the notation is identical for lmer and glmmTMB.
+
+```{r}
+SCT_ranEff_mer_mod <- lmer(SCT ~ 1 + (1 | line), 
+                       data = SCT_wt_25)
+
+SCT_ranEff_tmb_mod <- glmmTMB(SCT ~ 1 + (1 | line), 
+                       data = SCT_wt_25)
+```
+
+```{r}
+print(SCT_ranEff_mer_mod, digits = 4)
+
+print(SCT_ranEff_tmb_mod, digits = 4)
+```
+
+The full summaries may be useful.
+
+```{r}
+summary(SCT_ranEff_mer_mod)
+summary(SCT_ranEff_tmb_mod)
+```
+
+You will notice the estimates and standard errors are very similar, but not identical. Under the hood these two packages use very different approaches to fit the MLE. 
+
+We can use `confint` to get the confidence intervals on the estimates, but it is important to know that it can take some time for the profiling. For these simple models it should be pretty fast.
+
+```{r}
+prof_SCT_ranEff_mer_mod <- profile(SCT_ranEff_mer_mod)
+confint(prof_SCT_ranEff_mer_mod)
+```
+
+Importantly it is providing CI for not only the fixed effects (only the intercept in this model) but also the variance components (but expressed as sd), the first value (`.sig01`) is the CI for the among line variance, and `.sigma` are the CIs for the residual variation.
+
+We can extract the fixed and random effects (the conditional means)
+```{r}
+fixef(SCT_ranEff_mer_mod)
+
+ranef(SCT_ranEff_mer_mod) # conditional means, blup
+
+re_mer_mod <- as.data.frame(ranef(SCT_ranEff_mer_mod, condVar=TRUE)) # with SE on conditional means.
+
+head(re_mer_mod)
+```
+
+
+And we can examine the variances of interest and use these to estimate broad sense heritability
+
+```{r}
+summary(SCT_ranEff_mer_mod)$varcor
+
+0.559^2/(0.559^2 + 1.075^2)
+```
+
+and we can get a sense of this visually by plotting the conditional means (blups) in ggplot (note, using the data frame of random effects from above)
+
+```{r}
+ggplot(re_mer_mod, aes(y = grp, x = condval)) +
+  geom_point() + 
+ # facet_wrap(~ term, scales = "free_x") +
+  geom_errorbarh(aes(xmin = condval -2*condsd,
+                     xmax = condval +2*condsd), height = 0) +
+  xlab("Conditional means") + 
+  ylab("Line")
+```
+
+
+## basic random slopes models
+
+We will next explore a random slopes model allowing for group (line) level variation for the relationship between the length of the tarsus and number of SCT. Importantly, I would probably NOT include this as an actual random effect in this model, but it is useful for illustrative purposes as we build more complex model.
+
+
+First let us consider the simple model global linear model. In other words, a *complete pooling* model where we ignore that the observations come from different lines.
+```{r}
+ggplot(SCT_wt_25, aes(y = SCT, x = tarsus_Z)) + 
+  geom_jitter(height = 0.2, alpha = 0.1, color = "red") + 
+  geom_smooth(method = "lm", alpha = 0.75)
+
+lm_tarsus <- lm(SCT ~ 1 + tarsus_Z, data = SCT_wt_25)
+print(lm_tarsus)
+```
+
+Obviously (in addition to the fixed effects we are also currently ignoring) we are ignoring the effects of line, both for the intercept (at mean tarsus length) and the slopes
+
+We could go ahead and fit a seperate linear regression for each line, but as we discussed in class there are also many issues with this.
+
+```{r}
+ggplot(SCT_wt_25, aes(y =SCT, x = tarsus_Z)) + 
+  geom_point(size = 0.5) + 
+  geom_smooth(method = "lm", alpha = 0.25, size = 0.5) + 
+  facet_wrap(~line)
+```
+
+
+As we discussed in class the real power of the mixed model approach comes down to the *partial pooling* of information across groups.
+
+But as we will see, we have a few options on how to specify random slopes models.
+
+### Random slopes allowing free estimation of covariances
+
+```{r}
+random_slope_mer_1 <- lmer(SCT ~ 1 + tarsus_Z + (1 + tarsus_Z | line),
+                           data = SCT_wt_25)
+
+random_slope_tmb_1 <- glmmTMB(SCT ~ 1 + tarsus_Z + (1 + tarsus_Z | line),
+                           data = SCT_wt_25)
+
+print(random_slope_mer_1)
+print(random_slope_tmb_1)
+```
+
+
+Similar but not perfectly identical estimates (which is fine!). Importantly we are getting estimates of the variation among strains (i.e genetic variation) for the slope and intercept. Noticebly the among line variation in slopes is pretty small (but so is the overall global estimate of the slope). However, very worringly the correlation for the random effects between the slope and intercept is -1. This could be for many reasons (including not much variation in the slope itself). But we should decide how to deal with this.
+
+In this situation I would suggest slightly modifiying the random slopes model with a forced constraint. Specifically that the correlation are fixed at zero. So the among line variance for the intercept and slope do not depend on another. This does make some strong assumptions, but it is wortwhile to compare and see how much the issue with the correlation is impacting our estimates.
+
+To do so there are a few approaches to generate equivalent models. First for lmer we use the "||" notation to let it know we want to estimate these independently.
+
+```{r}
+random_slope_mer_2 <- lmer(SCT ~ 1 + tarsus_Z + (1 + tarsus_Z || line),
+                           data = SCT_wt_25)
+print(random_slope_mer_2)
+```
+
+
+Equivalently for estimation (although it means a slightly different thing in terms of how the model is specified, see the lecture video) we can break our random effects into two separate (and independent!) parts:
+
+```{r}
+random_slope_mer_3 <- lmer(SCT ~ 1 + tarsus_Z + (1 | line) + (0 + tarsus_Z | line),
+                           data = SCT_wt_25)
+print(random_slope_mer_3)
+```
+
+
+Importantly we see that by imposing this constraint on the variance covariance matrix of random effects, we (luckily) did not alter our estimates too much. However we should see how much it has impacted the standard errors of the slope.
+
+```{r}
+summary(random_slope_mer_1)$coef[,1:2]
+summary(random_slope_mer_2)$coef[,1:2]
+summary(random_slope_mer_3)$coef[,1:2]
+```
+
+No real change thankfully!
+
+How about for the variances themselves? 
+
+```{r}
+prof_SCT_ranEff_mer_mod
+```
+
+
+
+## models of biological interest.
+
+Now we will extend this model a bit with data set to help us start and interpret things a bit
+
+You may remember we fit a lm model like this before
+
+```{r}
+SCT_lm_mod <- lm(SCT ~ (genotype + temp + tarsus_Z)^2, 
+                    data = dll_data)
+```
+
+We can plot some of the summaries
+
+```{r}
+dwplot(SCT_lm_mod, 
+       vline = geom_vline(xintercept = 0, 
+                          colour = "grey50", linetype = 2))
+
+SCT_lm_mod_estimates  <- tidy(SCT_lm_mod , 
+                       conf.int = TRUE, conf.level = 0.95)
+```
+
+(same just prettier)
+
+```{r}
+ggplot(SCT_lm_mod_estimates[-1,], aes(y = fct_inorder(term))) +
+  stat_halfeye(
+    aes(xdist = dist_student_t(df = df.residual(SCT_lm_mod), 
+                               mu = estimate, 
+                               sigma = std.error))) +
+  geom_vline(xintercept = 0, color = "red", alpha = 0.5, linetype = 2) +
+  labs(title = "coefficient plot, lm", subtitle = "intercept not plotted") +
+  ylab("model term") + xlab("coefficient estimate")
+```
+
+
+Now, thinking about our design each strain (line) had the same mutation (*Dll[11]*) introduced into it and tested (with and without the mutation) at each of two developmental rearing temperatures. So in principle we could allow much more than the intercept to vary by our random "group" variable of line. 
+
+
+
+Let's use some of the tools from `emmeans` and `effects` that help us understand these interactions more clearly. 
+
+```{r}
+as.data.frame(allEffects(model8)) # predicted values for SCT (fit) at varying levels of tarsus, genotype and temp
+
+plot(allEffects(model8)) # plots of the predicted effects and confidence band, with observations as a rug plot
+```
+
+This above plot more or less (for this situation) gives us a slightly different view of the ggplot with the observations and line fits above. This one is better in terms of estimate, and I would actually use these values for plotting not the `geom_smooth` approach above. This is because these estimates used by `effects` are from this full model with all information. I leave it as an exercise for you to figure out how to make the plot like the one using geom_smooth, but using the model fit values from effects (you can use the data frame above or the `predictorEffect` function). See the "Predictor Effects Graphics Gallery" vignette for some nice examples.
+
+Alternatively, we can look at these patterns by focusing on the estimated slopes of the relationships between SCT and tarsus as they vary by genotype and temperature:
+
+```{r}
+emtrends(model8, ~ genotype + temp, var = "tarsus_Z" ) # the slopes
+
+plot(emtrends(model8, ~ genotype|temp, var = "tarsus_Z" )) + 
+  geom_vline(xintercept = 0, color = "red", linetype = 2, alpha = 0.35) + 
+  xlab("slope for tarsus_Z")
+```
+
+Which makes it clear that based on this model and its fit, that the difference between the genotypes (in terms of how it influences *SCT ~ tarsus*) largely occurs at 25C. At 30C they are more similar (and more intermediate in magnitude).
+
+To focus on the effects of our two factors (*genotype* and *temp*) on the number of SCT we can examine the estimated values using `emmeans`.
+
+```{r}
+emm_mod8 <- emmeans(model8, ~ genotype | temp)
+emm_mod8
+
+plot(emm_mod8) + xlab("emmeans for SCT")
+```
+
+
+Or a slightly nicer version, closer to publication quality.
+
+```{r}
+tidy_mod8_emm <- tidy(emm_mod8, 
+                      conf.int = TRUE, conf.level = 0.95)
+
+tidy_mod8_emm$genoTemp <- with(tidy_mod8_emm, 
+                               interaction(genotype, temp, drop = T, sep = ""))
+
+ggplot(tidy_mod8_emm, aes(y = fct_inorder(genoTemp))) +
+  stat_halfeye(
+    aes(xdist = dist_student_t(df = df, 
+                               mu = estimate, 
+                               sigma = std.error))) +
+  labs(title = "emmeans, model8") +
+  ylab("genotype/temp") + xlab("estimated number SCT")
+```
+
+
+We can also focus on contrasts between the genotypic effects, within each rearing temperature environment using the `pairs` function in `emmeans` (which has a very different function than `pairs` in base R):
+
+```{r}
+pairs(emm_mod8, reverse = TRUE)
+
+plot(pairs(emm_mod8, reverse = TRUE), 
+     xlab = "estimated difference") + 
+  geom_vline(xintercept = 0, color = "red", alpha = 0.35, linetype = 2)
+```
+
+*Note, I am taking advantage of the plotting tools in emmeans are really just ggplot...*
+
+Or a nicer version...
+
+```{r}
+tidy_mod8_emm_diff <- tidy(pairs(emm_mod8, reverse = TRUE), 
+                      conf.int = TRUE, conf.level = 0.95)
+
+ggplot(tidy_mod8_emm_diff, aes(y = temp)) +
+  stat_halfeye(
+    aes(xdist = dist_student_t(df = df, 
+                               mu = estimate, 
+                               sigma = std.error))) +
+  geom_vline(xintercept = 0, color = "red", alpha = 0.35, linetype = 2) +
+  labs(title = "contrasts, Dll - wt") +
+  ylab("temperature (C)") + xlab("estimated difference, SCT (Dll - wt)") 
+```
+
+Finally we can use an *interaction plot* also known as a reaction norm plot in biology. These are very common in biology, and we will use them more frequently when we fit linear mixed models towards the ends of the semester.
+
+```{r}
+emmip(model8, genotype ~  temp, CIs = TRUE) + 
+  ylab("Estimated number of SCT") +
+  xlab("Rearing Temperature (C)") +
+  labs(x = "Estimated number of SCT",
+       y = "Rearing Temperature (C)",
+       title = "Interaction plot",
+       subtitle = "at mean tarsus length")
+```
+
+
+These all just provide alternative ways of looking at the same estimates for the model fit to the data. In each, the temperature sensitive nature of the *Dll* mutant allele becomes clear. When the flies are reared at $25^{\circ}C$ there is an average difference of about 1 SCT (when estimated at the mean tarsus length for the whole population). However this effect all but disappear for the individuals raised at $30^{\circ}C$. Of course all of this is complicated by the fact that the relationships between the average number of SCT and tarsus length vary due to temperature. So this shows things can get complicated quickly! and the plots really really help to try and understand it. 
+
+If you are going to be fitting lots of general(ized) linear models (and linear mixed models), it really is useful to go through some of the vignettes (probably after the semester or while you are working on your final project) for both `effects` and `emmeans`. They really make everything
+
+## Model evaluation
+
+Let's go back and look at the summary of the model:
+
+```{r}
+summary(model8)
+```
+
+We definitely have a sense of some of the effects of the model, and the relative contributon of developmental plasticity (the rearing *temp*erature), genotype (wt and *Dll*) and the length of the tarsus on number of SCT. But what we have not really asked yet, is whether the overall model fit is actually any good. In other words, does the model do a good job of accounting for the variation that is observed in this sample?
+
+This is known as *model evaluation*. This is a much bigger topic, and can be important when *model selection* (selecting the "best" model from a set of models based on some criteria). We will not really deal much with model selection in this class other than to say that methods for "selecting" best models (such as a minimally adequate model for instance) or even methods based on relative model fit using information theoretic approaches (i.e. AIC, BIC) are generally **inadvisable** and other approaches like model regulazation (using lasso, ridge, elastic net for instance) or mixed/hierarchical models (which we will cover in class) are likely better approach.
+
+Instead, we are going to focus on the model we *a priori* decided to fit, and evaluate it specifically.
+
+### Residual Standard Error (RSE)
+
+The first piece of the model to examine is really just the information from the residuals. Specifically just the standard deviation of the residuals of the model:
+
+```{r}
+sd(resid(model8))
+```
+
+Those of you who have already stared at the output of the summary for the model may have noticed that this number appears at the bottom of the model summary and is called the *residual standard error*. So once again, a somewhat confusingly named term. You can extract it directly from the model summary like so
+
+```{r}
+summary(model8)$sigma
+```
+
+Where it is called *sigma* (in other words the symbol we use for the standard deviation!).
+
+
+So what does this number tell us? One way of thinking about this is as something akin to the *average prediction error*. What does that mean? You can think about it as telling us that on average we expect that fitted values for number of SCT from this model with deviate from the observed values by an average of `r summary(model8)$sigma` SCT. 
+
+One analogy that may be useful is like asking yourself how close you to tend to be when someone asks you "What time it is?", and without looking at your phone or watch you say "I think it is about 8:30? In general when you make that prediction of it being 8:30 you recognize that it is a prediction with error. Do you (on average) tend to be pretty close (i.e. within 10 minutes). In which case your prediction error is low. Or are you one of those people without a good internal clock, and might guess it is 7:30 or 9:30? In which case your prediction error is somewhat high.
+
+So what does this tell us? Well we can use this along with some summary statistics from the observed data and some estimates from the model fit to help us evaluate it.
+
+One commonly used measure (more common in data science) is the *prediction error rate* which is simply the residual standard error divided by the mean of your observed value"
+
+$$
+\frac{\sigma_{\epsilon}}{\hat{\mu}_x}
+$$
+
+Or in R:
+
+```{r}
+summary(model8)$sigma/mean(dll_data$SCT)
+```
+
+So for this model the prediction error rate is about 13%. So your fitted value for number of SCT will be a bit more than 10% off of the observed value on average.
+
+I tend to not find this helpful. I do however find it more helpful to think about this in terms of the coefficients that are important to me. So looking back at our estimates, we know that at $25^{\circ}C$ the mutant (*Dll*) is on average going to have about 1 more SCT than the WT. But, we also know that on average these observations are going to deviate from these estimated values by 1.48 SCT. 
+
+```{r}
+summary(model8)$sigma/coef(model8)["genotypeDll"]
+```
+
+So we expect fairly frequently to observe wild type individuals who actually have more SCT than the *Dll* genotype.
+
+
+### Coefficient of determination
+
+Probably the most common measure of evaluation that provided information on absolute fit is the *Coefficient of determination*, sometimes called "r squared" $r^2$. If you look at the summary of the model you actually see two values.
+
+```{r}
+summary(model8)$r.sq # multiple r squared
+
+summary(model8)$adj.r.sq
+```
+
+For the simple "multiple R squared" it is just a measure of what proportion of variance in number of SCT in the sample accounted for by the model divided by the estimated variance of SCT for the observed data
+
+$$
+\frac{\sigma^2_{\hat{y}}}{\hat{\sigma^2_{y}}}
+$$
+```{r}
+var(fitted(model8))/var(dll_data$SCT)
+```
+
+But importantly this measure does not account for how many parameters are being estimated (and the more parameters you estimate, the higher this value *EVEN IF THE PREDICTORS PROVIDE NO ADDITIONAL INFORMATION* - *TRY FOR YOURSELF*). So the adjusted R squared is preferred as it accounts for the number of parameters being fit (how many df are being used). In this case they are both similar, and the fitted model values account for about 17% of the variation in the number of SCT. As always I prefer visualizing this.
+
+```{r}
+dll_data$mod8_fit <- fitted(model8)
+dll_data$mod8_resid <- residuals(model8)
+
+ggplot(dll_data, aes( y = mod8_fit, x = SCT, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 1) + 
+  coord_cartesian(xlim = c(8, 20), ylim = c(8, 20))
+```
+
+So it is clear that most of the variation in the number of SCT is not explained. Depending on your biological question this may or may not be important.
+
+### tangent to demonstrate the issues with the simple multiple R squared
+
+**run these lines AFTER you have already run model8**
+
+5 meaningless predictors to add to our model.
+```{r}
+dll_data$fp1 <- rnorm(1918)
+dll_data$fp2 <- rnorm(1918)
+dll_data$fp3 <- rnorm(1918)
+dll_data$fp4 <- rnorm(1918)
+dll_data$fp5 <- rnorm(1918)
+
+# the coefficient of determination
+summary(model8)$r.sq
+summary(model8)$adj.r.sq
+```
+
+With one of the meaningless predictors
+```{r}
+summary(update(model8, ~ . + fp1))$r.sq
+summary(update(model8, ~ . + fp1))$adj.r.sq
+```
+
+Adding in all 5 meaningless predictors
+```{r}
+summary(update(model8, ~ . + fp1 + fp2 + fp3 + fp4 + fp5))$r.sq
+summary(update(model8, ~ . + fp1 + fp2 + fp3 + fp4 + fp5))$adj.r.sq
+```
+
+all 5 meaningless predictors with all possible interactions!
+```{r}
+summary(update(model8, ~ . * fp1 * fp2 * fp3 * fp4 * fp5))$r.sq
+summary(update(model8, ~ .* fp1 * fp2 * fp3 * fp4 * fp5))$adj.r.sq
+```
+
+
+## Model diagnostics
+
+But with this model, we should now examine some diagnostics to examine the degree to which any important assumptions of the linear model framework have been *violated* 
+
+Let's take a look at some quick model diagnostics (in terms of model assessment)
+```{r}
+ggplot(dll_data, aes( x = mod8_resid)) + 
+  geom_density(alpha = 0.5, bw = 0.4)
+
+ggplot(dll_data, aes( x = mod8_resid, col = genotype:temp)) + 
+  geom_density(alpha = 0.5, bw = 0.45)
+
+ggplot(dll_data, aes( y = mod8_resid, x = genotype, color = temp)) + 
+  geom_violin(bw = 0.45)
+
+
+ggplot(dll_data, aes( y = mod8_resid, x = tarsus_Z)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth()
+
+ggplot(dll_data, aes( y = mod8_resid, x = tarsus_Z, col = genotype:temp)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(fullrange = FALSE)
+
+
+ggplot(dll_data, aes( y = abs(mod8_resid), x = tarsus_Z, col = genotype:temp)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(fullrange = FALSE)
+
+
+
+ggplot(dll_data, aes( y = mod8_fit, x = SCT, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 1) + 
+  coord_cartesian(xlim = c(8, 20), ylim = c(8, 20))
+
+
+# assessing independence w predictors.
+ggplot(dll_data, aes( y = mod8_resid, x = mod8_fit, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 0)
+
+
+ggplot(dll_data, aes( y = mod8_resid, x = mod8_fit, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  geom_smooth()
+
+# Why are we NOT interested in this (Ask students to discuss these latter two plots)
+ggplot(dll_data, aes( y = mod8_resid, x = SCT, col = genotype:temp)) + 
+  geom_jitter(width = 0.2, alpha = 0.2)
+```
+
+
+```{r}
+autoplot(model8)
+```
+
+```{r}
+dfbetasPlots(model8)
+plot(acf(resid(model8)))
+avPlots(model8)
+vif(model8)
+kappa.lm(model8)
+
+mX <- model.matrix(model8)
+crap <- eigen( t(mX) %*% mX)$values
+
+sqrt(crap[1]/crap[8])
+
+```
+
+
+## The whole megillah (for model diagnostic and evaluation)
+
+```{r}
+model9 <- glmmTMB(SCT ~  1 + (tarsus_Z + genotype + temp)^3 
+               + diag(1 + tarsus_Z| line) + us(0 + genotype + temp|line), 
+             data = dll_data)
+
+summary(model9)
+```
+
+```{r}
+plot(allEffects(model9))
+
+emt_mod9 <- emtrends(model9, ~ genotype | temp, var = "tarsus_Z")
+emt_mod9
+
+plot(emt_mod9, xlab = "slope SCT ~ tarsus_Z") +
+    geom_vline(xintercept = 0, color = "red", linetype = 2, alpha = 0.5)
+
+
+emm_mod9 <- emmeans(model9, ~ genotype | temp)
+emm_mod9
+
+plot(emm_mod9, xlab = "SCT, estimated")
+
+pairs(emm_mod9)
+
+plot(pairs(emm_mod9, reverse = TRUE), 
+     xlab = "estimated difference, SCT") +
+  geom_vline(xintercept = 0, color = "red", linetype = 2, alpha = 0.5)
+```
+
+
+```{r}
+dll_data$mod9_resid <- resid(model9)
+dll_data$mod9_fitted <- fitted(model9)
+```
+
+
+```{r}
+ggplot(dll_data, aes( x = mod9_resid)) + 
+  geom_density(alpha = 0.5, bw = 0.4)
+
+ggplot(dll_data, aes( x = mod9_resid, col = genotype:temp)) + 
+  geom_density(alpha = 0.5, bw = 0.45)
+
+ggplot(dll_data, aes( y = mod9_resid, x = genotype, color = temp)) + 
+  geom_violin(bw = 0.45)
+
+ggplot(dll_data, aes( y = mod9_resid, x = tarsus_Z, col = genotype:temp)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(fullrange = FALSE)
+
+ggplot(dll_data, aes( y = mod9_resid, x = mod9_fitted, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  geom_smooth()
+
+ggplot(dll_data, aes( y = mod9_resid, x = mod9_fitted)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  geom_smooth()
+
+ggplot(dll_data, aes( y = mod9_fitted, x = SCT, col = genotype:temp)) + 
+  geom_jitter(width = 0.1, alpha = 0.2) + 
+  geom_abline(intercept = 0, slope = 1) + 
+  coord_cartesian(xlim = c(8, 20), ylim = c(8, 20))
+```
+
+
+Finally, and something we should always do is report our version of R and packages
+```{r}
+sessionInfo()
+```
+

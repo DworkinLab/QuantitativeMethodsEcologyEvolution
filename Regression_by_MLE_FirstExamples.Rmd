@@ -1,0 +1,399 @@
+---
+title: "Maximum Likelihood Estimation step by step"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(list(digits = 3, show.signif.stars = F, show.coef.Pvalues = FALSE))
+```
+
+
+# Regression by Maximum Likelihood Estimation, first example
+
+## Libraries
+
+```{r}
+require(bbmle)
+```
+
+
+## Background and introduction
+
+While LSE is very useful and powerful, often models we want to estimate can not be done easily (or at all) with LSE or related methods. Maximum likelihood estimation is a powerful and very flexible framework for estimation and inference. 
+
+In this example we are going to continue with something you are familiar with, a simple linear regression. Importantly while we can fit such a regression by MLE (and for teaching and learning reasons we will practice it with related examples). So we are using the linear regression as a stepping stone to more complex models. When we get to some more advanced modeling, being able to understand how to fit such models will open up many powerful modeling opportunities.
+
+
+First let us simulate some data for a linear regression
+
+```{r}
+n = 100
+
+x1 = rnorm(n, mean = 7, sd = 2) # continuous predictor variable
+
+#continuous dependent w variation
+y1 = rnorm(length(x1), 
+           mean = 3 + 2*x1 + 1, 
+           sd = 3)
+
+plot(y1 ~ x1, pch = 20, 
+     cex = 2, col = rgb(0, 0, 1, 0.25))
+```
+
+
+Fitting the linear model using `lm` (for later comparison with our MLE).
+
+```{r}
+model1.lm <- lm(y1 ~ x1)
+
+summary(model1.lm)$coef[,1:2] # estimates and SE
+
+confint(model1.lm)  # Asymptotic normal CI
+
+vcov(model1.lm) # variance covariance matrix for estimated parameters. 
+
+#sqrt of variances for parameters are their standard errors.
+#i.e. for the slope
+sqrt(vcov(model1.lm)[2,2])
+
+summary(model1.lm)$coef[2,2]
+```
+
+Even with a fit using `lm` we can extract the log likelihood associated with the model (even though it is not even fit by MLE).
+
+```{r}
+-logLik(model1.lm) 
+```
+
+One useful question to ask yourself is why is it reporting `df=3` here. 
+
+## perform model fit by MLE
+ 
+ For the fit we will use `mle2()` in the `bbmle` library. `mle2()` is a wrapper for `optim()`, which we used before (for Least Square estimation). But the function Ben Bolker wrote has some nice features we we can use. There is also an `mle` function in the `stats4` package which is somewhat similar, but with less functionality.
+
+In this class you have likely noticed I often write out the model for a linear regression as follows:
+
+$$
+Y \sim N(\mu = \beta_0 + \beta_1 X, \sigma)
+$$
+which translates to saying that our response variable $Y$ comes from a normally distributed random variable with mean equal to the regression line $\mu = \beta_0 + \beta_1 X$, (i.e. the *deterministic* component of the model) with $\beta_0$ being the model intercept and $\beta_1$ the slope of the line. The residual standard deviation (residual standard error) is $\sigma$ representing the *stochastic* component of the model.
+
+With our data we want to fit the model to get estimated parameters for the intercept $\hat{\beta}_0$, and the slope $\hat{\beta}_1$. One thing that is different with Maximum Likelihood estimation is we also estimate $\hat{\sigma}$. This differs from Least Square estimation. (can you think about why?)
+
+So with Maximum Likelihood estimation we are estimating:
+
+$$
+Y \sim N(\mu = \hat{\beta}_0 + \hat{\beta}_1 X,  \hat{\sigma})
+$$
+
+The reason for showing you this repeatedly was to get you used to this notation, which relates to the syntax for the likelihood calculator.
+
+ We write the likelihood calculator (our objective function) as follows:
+ 
+```{r}
+linregfun1 = function(b0, b1, sigma, y = y1, x = x1) { 
+      Y.pred = b0 + b1 *x 
+      -sum(dnorm(y, mean = Y.pred, sd = sigma, log = TRUE)) } 
+```
+
+with `b0` for the intercept $\hat{\beta}_0$, `b1` for the slope $\hat{\beta}_1$ and `sigma` for $\hat{\sigma}$.
+
+In the function `linregfun1` I have explicitly written out the deterministic component `Y.pred = b0 + b1 * x1` representing $\mu = \hat{\beta}_0 + \hat{\beta}_1 X$ on its own line. While this is not required, I find it brings alot of clarity to the different parts of the model.
+
+In the next line with `dnorm` we are then making it clear that our response variable `y1` is normally distributed ($\sim N()$) with mean equal to `Y.pred` ($\mu = \hat{\beta}_0 + \hat{\beta}_1 X$) with a standard deviation `sigma` ($\hat{\sigma}$) to be estimated as well.
+
+While we have done this before for our first tutorials for MLE, let's just make sure we understand what this function will do. So try using it with a few different values for the intercept `b0`, slope `b1` and standard deviation `sigma`.
+
+```{r}
+linregfun1(b0 = 0, b1 = 0, sigma = 1)
+linregfun1(b0 = 3, b1 = 1, sigma = 1)
+linregfun1(b0 = 3, b1 = 2, sigma = 3)
+```
+
+If we wanted to, we could use grid approximation (it is only three parameters), but we use the `mle2` function to optimize and find the MLE, which is what we will use from now on. For starting values I used the mean
+
+```{r}
+
+mean(y1)
+sd(y1)
+
+mle2.model <- mle2(linregfun1, 
+    start= list(b0 = 17, b1 = 0.1, sigma = 5.84))
+```
+
+We get some warnings 
+```{r}
+warnings()
+```
+
+This has to do with "testing" values that are impossible (probably negative values for `sigma`). I will show you some ways later on to deal with this, but for in a moment we will see it is producing the correct estimates. It is at this point worth seeing what happens with different starting values. importantly the optimizer can get "stuck" in the wrong place (in parameter space).
+
+Our MLE estimates:
+```{r}
+summary(mle2.model)
+```
+
+compare to the estimates we got from using `lm`. We can also compare the residual standard error of the lm fit to the value of sigma from the MLE fit.
+
+```{r}
+summary(model1.lm)$coef[,1:2]
+summary(model1.lm)$sigma
+```
+
+Note that sigma and the SE from the MLE are smaller. This is something that is generally adjusted for.
+
+
+We can get the -logLik, deviance and AIC easily enough.
+ 
+```{r}
+-logLik(mle2.model)  # in case you do not like to divide by 2 ;)
+deviance(mle2.model) 
+```
+
+
+## Confidence intervals for our Maximum Likelihood estimates
+
+In the summary of the model fit, we did the standard errors for each parameter. So if we wanted to we could use those and plug them with a t-distribution. However, the "MLE" way is to use the likelihood profile and use the "curvature" of the likelihood surface to determine the approximate CI.
+
+With `mle2` if you call `confint` it will use a version (method) specific to `mle2` objects and profile the fit and use this to determine the CI
+
+```{r, warning = FALSE}
+profile.mle2.model <- profile(mle2.model)
+confint(profile.mle2.model)
+```
+
+# Plotting the profile can be very useful to see if there is anything wonky going on with the fit
+
+```{r}
+par(mfrow=c(1,3))
+
+plot(profile.mle2.model, 
+    abs = T, conf = c(99, 95, 90, 80, 50)/100)  
+
+par(mfrow=c(1,1))
+```
+  
+As with an `lm` object produces variances and covariances of parameter estimates (but from the fisher information matrix)
+
+```{r}
+vcov(mle2.model) 
+```
+
+
+```{r}
+sqrt(vcov(mle2.model)[1,1]) # SE of parameters.  
+```
+
+Why are they lower than the OLS? Think about the MLE of the parameter variance.
+
+
+## Your turn
+
+
+Let's say you have two predictor variables, x1 and x2. How would you modify the likelihood calculator and call to `mle2` to get it to fit?
+
+```{r}
+rm(x1, y1) 
+n = 100
+
+x1_vals = rnorm(n, mean = 0, sd = 2) 
+x2_vals = rnorm(n, mean = 0, sd = 3)
+
+#continuous dependent w variation
+y_vals = rnorm(n, 
+           mean = 0.5 + 1.5*x1_vals + 3*x2_vals, 
+           sd = 1.5)
+```
+
+
+```{r, warning = FALSE}
+linregfun2 = function(b0, b1, b2, sigma, y = y_vals, x1 = x1_vals, x2 = x2_vals) { 
+      Y.pred = b0 + b1*x1 + b2*x2
+      -sum(dnorm(y_vals, mean = Y.pred, sd = sigma, log = TRUE)) } 
+
+
+mean(y_vals)
+sd(y_vals)
+
+mle2.model2 <- mle2(linregfun2, 
+    start= list(b0 = 0.9, b1 = 0.1, b2 = 0.1,  sigma = 9.13))
+``` 
+
+
+```{r}
+summary(mle2.model2)
+
+mod_lm2 <- lm(y_vals ~ x1_vals + x2_vals)
+summary(mod_lm2)$coef[,1:2]
+summary(mod_lm2)$sigma
+```
+
+
+```{r, warning = FALSE}
+profile.mle2.model2 <- profile(mle2.model2)
+confint(profile.mle2.model2)
+
+par(mfrow=c(2,2))
+
+plot(profile.mle2.model2, 
+    abs = T, conf = c(99, 95, 90, 80, 50)/100)  
+
+par(mfrow=c(1,1))
+```
+
+
+## Let's do it for a real (but familiar example)
+
+```{r}
+sct_data  <- read.csv("https://raw.githubusercontent.com/DworkinLab/DworkinLab.github.io/master/dataSets/Dworkin2005_ED/dll.csv", 
+                    header = TRUE,
+                    stringsAsFactors = TRUE)
+
+
+sct_data <- na.omit(sct_data) 
+
+sct_data$genotype <- relevel(sct_data$genotype, "wt") # make wt reference level
+
+sct_data$tarsus_Z <- scale(sct_data$tarsus, center = T, scale = T) 
+```
+
+
+Work in groups to fit this same model by writing your own likelihood calculator. (Hint: one way is using the design/model matrix directly in your likelihood function)
+```{r}
+SCT_model1 <- lm(SCT ~ tarsus_Z + genotype + tarsus_Z:genotype,
+                 data = sct_data)
+
+summary(SCT_model1)$coef[,1:2]
+```
+
+
+```{r}
+mmat <- model.matrix(~ tarsus_Z + genotype + tarsus_Z:genotype, 
+                        data = sct_data)
+
+linregfunX = function(b0, b1, b2, b3, sigma, y = sct_data$SCT ) { 
+      Y.pred = b0 + b1*mmat[,2] + b2*mmat[,3] + b3*mmat[,4]
+      -sum(dnorm(y, mean = Y.pred, sd = sigma, log = TRUE)) } 
+```
+
+Test that it works
+```{r}
+sd(sct_data$SCT) # for sigma
+linregfunX(b0 = 11, b1 = 0 , b2 = 0, b3 = 0, sigma = 1.63, y = sct_data$SCT)
+```
+
+
+```{r, warning = FALSE}
+mle2.model3 <- mle2(linregfunX, 
+    start= list(b0 = 11, b1 = 0.1, b2 = 0.1, b3 = 0, sigma = 1.63))
+
+summary(mle2.model3)
+```
+
+```{r}
+summary(SCT_model1)$coef[,1:2]
+summary(SCT_model1)$sigma
+```
+
+```{r, warning = FALSE}
+profile.model3 <- profile(mle2.model3 )
+confint(profile.model3)
+
+par(mfrow=c(2,3))
+
+plot(profile.model3 , 
+    abs = T, conf = c(99, 95, 90, 80, 50)/100)  
+
+par(mfrow=c(1,1))
+```
+
+
+
+## optimization for MLE
+
+```{r}
+linregfun = function(a = mean(sct_data$SCT), b = 0, sigma = sd(sct_data$SCT), x1 = sct_data$tarsus_Z, y1 = sct_data$SCT) { 
+      Y.fixed = a + b*x1 
+      -sum(dnorm(y1, mean = Y.fixed, sd = sigma, log = TRUE)) 
+} 
+
+mle2.model.1  <- mle2(linregfun, 
+                      start = list(a = 0, b = 0, sigma = 1),
+                      method = "BFGS")
+
+summary(mle2.model.1)
+```
+
+We get warnings, and no estimates so the search did not do a good job of optimization.  As we talked about in class, much of this is due to starting values. If we provide some reasonable values, things will work. We can use the overall mean of SCT for a starting values for the intercept, and we can use the overall sd(SCT) for sigma
+
+```{r}
+mle2.model.take.2  <- mle2(linregfun, 
+  start = list(a = mean(sct_data$SCT),
+               b = 0, sigma=sd(sct_data$SCT)), 
+  method="BFGS")
+  
+summary(mle2.model.take.2)
+plot(profile(mle2.model.take.2))
+```
+
+But you can imagine there will be situations where we have some harder time getting reasonable starting values (although always start with method of moments as a first guess).  Some like to use OLS to get starting values, which is potentially also a useful idea (if somewhat redundant). One thing we can do is utilize different optimization methods to get a set of "initial" estimates, and then use those estimates as starting values for a second round of optimization. 
+
+Let's try simulated annealing (SANN), also known as the Metropolis algorithm.
+
+#### Using different algorithms for optimization.
+
+```{r}
+mle2.model.SANN  <- mle2(linregfun, 
+  start = list(a = 0, b = 0, sigma = 20), 
+  method = "SANN")
+
+
+summary(mle2.model.SANN) # Still somewhat off, but worth trying
+plot(profile(mle2.model.SANN))
+```
+
+
+Let's try these values.
+
+```{r}
+mle2.model.take.3  <- mle2(linregfun, 
+  start = list( a = 11.13, b = 0.47, sigma = 1.56), 
+  method = "L-BFGS-B", 
+    lower = c(a = -10, b = -10, sigma = 0.0001))
+  
+summary(mle2.model.take.3 )
+plot(profile(mle2.model.take.3))
+confint(mle2.model.take.3)
+```
+ 
+ 
+ In general if you are having problems, I recommend:
+ 
+A. Find the method of moments estimators, and using those as guesses for starting values for both fixed and random parameters in the model
+B. If BFGS or L-BFGS-B is not working, try SANN, then use those "estimates" as starting values for an optimization using BFGS.
+
+C. fit a simpler model, use those parameter values as starting values in more complex models
+
+
+Since we are estimating 3 parameters, the Nelder-Mead Simplex may work as well.
+
+```{r}
+mle2.model.Nelder  <- mle2(linregfun, 
+                           start = list(a = 0, b = 0, sigma =0.5), method = "Nelder-Mead")
+
+summary(mle2.model.Nelder) 
+plot(profile(mle2.model.Nelder))
+```

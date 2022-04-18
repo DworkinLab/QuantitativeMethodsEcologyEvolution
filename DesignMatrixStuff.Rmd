@@ -1,0 +1,115 @@
+---
+title: "How does the design matrix help us"
+author: "Ian Dworkin"
+date: "28/02/2022"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# How does the design matrix help?
+
+Tyler asked a very sensible question in class today about how (since the design matrix only has predictor variables) helps us to get our estimates.
+
+From reading in Irizarry and Love, you (and Tyler) probably saw this on pages 160-161 of that book
+
+
+$$
+\mathbf{Y} = \mathbf{X\beta + \epsilon}
+$$
+Where $\mathbf{Y}$ is our vector of response, $\mathbf{X}$ s the design matrix,  $\mathbf{\beta}$ is the vector of coefficients and  $\mathbf{\epsilon}$ are the residual errors.
+
+$$
+\mathbf{Y} = \mathbf{X\beta + \epsilon}
+$$
+Using least squares estimation we want to minimize the residuals, so in matrix form this looks like
+
+
+$$
+ \mathbf{\hat{Y}} = \mathbf{X\beta}
+$$
+
+
+$$ 
+( \mathbf{Y}- \mathbf{X\beta})^T( \mathbf{Y}- \mathbf{X\beta})
+$$
+Where the fitted values $\mathbf{\hat{Y}}$ are given by $\mathbf{X\beta}$.
+
+Some calculus, and setting the derivative to zero allows us to solve for the coefficients we want to estimate
+
+
+$$
+\mathbf{\beta} = (\mathbf{X^TX)^{-1}X^TY}
+$$
+
+(Please note I had the the last part of the equation in the reverse order on the board, which will not work. Apologies.)
+
+
+## That is probably not so intuitive...
+
+Let's take a step back. So think about a really simple made up example with just a single continuous predictor:
+
+```{r}
+x <- 1:20
+
+y <- rnorm(length(x), 2 + 0.5*x, 1.5)
+
+plot(y ~ x, pch = 20)
+```
+
+
+We can fit the regression and see what the slope is
+
+```{r}
+lm(y ~ x)
+```
+
+
+### The way you learned it undergrad
+
+You probably remember in your undergraduate stats class calculating the slope of this relationship by something that looks like this:
+
+
+$$
+\beta_1 = \frac{cov(x,y)}{\sigma^2_x}
+$$
+where the slope $\beta_1 =$, is the covariance between our response *y* and predictor *x* ($cov(x,y)$), divided by the variance of the predictor variable, *x* ($\sigma^2_x$). In R this would look like:
+
+```{r}
+cov(x,y)/var(x)
+```
+
+Which gives us the same slope! This works well for this simple example. But how do we extend it when we have multipe predictors.
+
+Well the design matrix (and the matrix algebra) allows us to generalize this idea.
+
+In this case our design matrix mmX (for $\mathbf{X}$) looks like:
+
+```{r}
+mmX <- model.matrix(~x)
+mmX 
+```
+
+and we can use a bit of matrix algebra from above in R:
+(**DON'T** worry about the details, just showing that it can be done this way, you don't need to know it if you don't want to)
+
+```{r}
+solve(t(mmX) %*% mmX) %*% t(mmX) %*% y
+```
+
+
+## Connecting the dots.
+
+So one way of thinking about this is connecting the numerator and denominator for the simple case with what the matrix algebra is generalizing.
+
+In this case the the covariance between x and y $cov(x,y)$ is mostly in this piece $\mathbf{X^TY}$, while the variance of the predictor that you are dividing by is mostly from $\mathbf{X^TX}^{-1}$. 
+
+
+

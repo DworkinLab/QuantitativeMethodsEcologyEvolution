@@ -1,0 +1,259 @@
+---
+title: "Step by Step intro into using the logit"
+author: "Ian Dworkin"
+date: "28/03/2022"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Step by step intro to the log odds (logit) function, logistic (inverse logit) and logistic regression
+
+
+Below we go through a simple (and made up data set!) example to help demonstrate a simply logistic regression and interpretation for a single categorical predictor variable.
+
+```{r}
+library(ggplot2)
+library(bbmle)
+library(emmeans)
+```
+
+
+## Let's simulate some data
+
+Let's simulate two different genotypes that influence mating propensity.The wild type (*wt*) has a relatively high probability of successfully mating ($Pr(y_{wt} = mating) = 0.75$), while the mutant with a defective courtship behaviour is reduced ($Pr(y_{mutant} = mating) = 0.5$). We measure 100 individuals from each genotype.
+
+```{r}
+mating_wt <- rbinom(100, 1, 0.75) # 1 is a success, 0 is a failure
+
+mating_mt <- rbinom(100, 1, 0.5)
+
+genotype <- gl(2, 100, labels = c("wt", "mutant"))
+
+mating_dat <- data.frame(genotype, mating = c(mating_wt, mating_mt)) 
+```
+
+## quick plot of our data
+
+Ok, now we pretend not to know we simulated it so we can understand how to analyse this.
+
+```{r}
+ggplot(mating_dat, aes(y = mating, x = genotype, col = genotype )) + 
+  geom_jitter(height = 0.05, alpha = 0.5)
+```
+
+How might we analyze our data if our observed responses are just 1 (mated) and 0 (no mating)?
+
+So what might we want to estimate? Well the probability of mating (for each genotype) is a pretty sensible thing we can understand!
+
+So how might we do this?
+
+
+## logit (log odds) function
+
+For logistic regression we will be using the logit function
+
+$$
+logit(p) = log(\frac{p}{1-p})
+$$
+
+Where $p$ is the probability of success of the event ( mating), $\frac{p}{1-p}$ is the odds (but not the odds ratio, see below) and $log(\frac{p}{1-p})$ is the log odds (also known as the logit).
+
+So how is this a useful link function for expressing the probability?
+
+Let's first think about $p$ and how might we "linearize" (and make the mean-variance relationship easier to deal with)?
+
+Let's examine the relationship between $\frac{p}{1-p}$ and $p$ over a set of possible values:
+
+```{r}
+odds_function <- function (p) {p/(1-p)}
+
+probs <- seq(0.1, 0.8, by = 0.01)
+
+odds_out <- odds_function(p = probs)
+
+plot( y = odds_out , x = probs, pch = 20, type = "l",
+      xlab = "p", ylab = "odds")
+```
+
+This does not seem so problematic, and reasonably interpretable. When the probability of mating is $p = 0.5$ that is equivalent to saying that the odds of mating are 
+$\frac{0.5}{1-0.5} = 1$
+
+```{r}
+odds_function(0.5)
+```
+
+When the probability of mating is $p = 2/3$ then we see the odds of mating are 
+$$\frac{\frac{2}{3}}{\frac{1}{3}} = \frac{3 \times 2}{3} = 2$$
+
+```{r}
+odds_function(2/3)
+```
+
+The problem with *odds* is for very small or large values of $p$
+
+```{r}
+odds_function(0.0001)
+odds_function(0.9999)
+```
+
+
+Let's plot it again over a wider range of values
+
+```{r}
+probs <- seq(0.01, 0.99, by = 0.01)
+
+odds_out <- odds_function(p = probs)
+
+plot( y = odds_out , x = probs, pch = 20, type = "l",
+       xlab = "p", ylab = "odds")
+```
+
+When we see this pattern of increase we commonly log transform the values. So let's write this function.
+
+
+```{r}
+log_odds_function <- function (p) {log(p/(1-p))}
+
+log_odds_out <- log_odds_function(p = probs)
+
+plot( y = log_odds_out , x = probs, pch = 20, type = "l",
+       xlab = "p", ylab = "log odds (logit)")
+
+plot( y = log_odds_out , x = odds_out, pch = 20, type = "l",
+       xlab = "odds", ylab = "log odds (logit)")
+```
+
+To save us the hassle of writing this we can just use the `qlogis` function for the logit function
+
+```{r}
+log_odds_out2 <- qlogis(p = probs)
+
+plot( y = log_odds_out2 , x = probs, pch = 20, type = "l",
+       xlab = "p", ylab = "logit using qlogis")
+```
+
+## logistic function (inverse logit link function)
+
+We can hard code it
+
+```{r}
+logistic_function <- function(x){
+  exp(x)/(1 + exp(x))}
+
+logistic_out <- logistic_function(seq(-5, 5, by = 0.25))
+
+plot(y = logistic_out, x = seq(-5, 5, by = 0.25),
+     type = "l",
+     ylab = "p",
+     xlab = "x")
+```
+
+We also can just use the `plogis` function
+
+```{r}
+logistic_out2 <- plogis(seq(-5, 5, by = 0.25))
+
+plot(y = logistic_out2, x = seq(-5, 5, by = 0.25),
+     type = "l", col = "red",
+     ylab = "p", xlab = "x",
+     main = "using plogis")
+```
+
+
+## Let's fit this with glm
+
+Now that we have a bit of background, we can use the `glm` function, specifying the appropriate family and link function.
+
+```{r}
+mod1 <- glm(mating ~ 1 + genotype, 
+            data = mating_dat, 
+            family = binomial(link = "logit"))
+
+summary(mod1)
+```
+
+Remember that the estimates are on the logit scale.
+
+So the estimated probability of mating for the wild type is the logistic function with just the intercept value.
+
+$$
+Pr(\hat{y}_{wt} = mated) = \hat{p}_{wt} = \frac{e^{\beta_0}}{1+ e^{\beta_0}}
+$$
+Where $\beta_0$ is the estimate for the intercept. We don't need the whole $\beta_0 + \beta_1 x$ only because our $x$ is a dummy variable with $x_{wt}=0$ so $\beta_1 x_{wt} = 0$
+
+```{r}
+estimated_prob_wt <- plogis(coef(mod1)[1]) # just the intercept
+estimated_prob_wt 
+```
+
+How about for the mutant?
+
+$$
+Pr(\hat{y}_{mt} = mated) = \hat{p}_{mt} = \frac{e^{\beta_0 + \beta_1 x}}{1+ e^{\beta_0 + \beta_1 x}}
+$$
+
+Where $\beta_1$ (the "slope") is the treatment contrast between mutant and wild type, $x$ is a dummy variable (for the mutant $x = 1$). So we just need to add the two estimated coefficients together but otherwise, the same as above.
+
+```{r}
+estimated_prob_mt <- plogis(sum(coef(mod1)))
+estimated_prob_mt 
+```
+
+
+We can compute useful things like the odds ratio as a measure of effect:
+
+```{r}
+OR_mating <- odds_function(estimated_prob_mt)/odds_function(estimated_prob_wt)
+
+OR_mating <- as.numeric(OR_mating) # just to get rid of the "intercept" label
+OR_mating
+
+# or log of the odds ratio
+log(OR_mating) # the log odds 
+```
+
+You may notice that this is exactly this value (the log odds ratio)is the same as the estimated coefficient of the treatment contrast $\hat{\beta}_1$. I will let you work out the algebra if you wish:
+
+```{r}
+coef(mod1)
+```
+
+## Using emmeans to simplify some of this.
+
+As we saw for general linear models, `emmeans` is very useful and powerful. So instead of doing all of this "by hand", we can use it to help us.
+
+We can compute the means of each genotype:
+
+```{r}
+emmeans(mod1, ~ genotype) # by default on the logit link scale
+```
+
+
+If we want the estimated mean and CIs on the response (probability) scale, we just use the `type` flag. Same as above, but without the hassle!
+
+```{r}
+emmeans(mod1, ~ genotype, type = "response") # on probability scale
+
+plot(emmeans(mod1, ~ genotype, type = "response")) + 
+  xlab("probability")
+```
+
+
+If we want contrasts (odds ratio) between the two genotypes with its uncertainty:
+
+```{r}
+pairs(emmeans(mod1, ~ genotype, type = "response"))
+
+plot(pairs(emmeans(mod1, ~ genotype, type = "response"))) + 
+  geom_vline(xintercept = 1, lty = 2, alpha = 0.5) +
+  xlab("odds ratio")
+```
+

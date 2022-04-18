@@ -1,0 +1,509 @@
+---
+title: "BIO708_BootstrappingRegressionModels"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+  html_document: 
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(list(digits = 3, show.signif.stars = F, show.coef.Pvalues = FALSE))
+```
+
+# Bootstrapping regression models
+
+
+## libraries
+
+```{r}
+library(boot)
+library(car)
+library(ggplot2)
+library(ggdist)
+library(tidyr)
+library(forcats)
+```
+
+
+
+## input data
+
+Same as we have done before.
+
+
+```{r}
+dll.data = read.csv("https://raw.githubusercontent.com/DworkinLab/DworkinLab.github.io/master/dataSets/Dworkin2005_ED/dll.csv", header = TRUE, stringsAsFactors = TRUE)
+ 
+dll.data = na.omit(dll.data)
+
+dll.data$temp <- factor(dll.data$temp)
+dll.data$replicate <- factor(dll.data$replicate)
+str(dll.data) 
+summary(dll.data)
+
+dll.data$genotype <- relevel(dll.data$genotype, ref="wt")
+str(dll.data)
+```
+
+## Setting ourselves up for stratified resampling
+
+```{r}
+strat_dat <- with(dll.data, interaction(genotype, temp), drop = TRUE)
+
+head(strat_dat)
+table(strat_dat)
+```
+
+
+## Using lm for comparison
+
+```{r}
+observ.lm <- lm(SCT ~ genotype*temp, 
+                data = dll.data)
+
+summary(observ.lm)
+confint(observ.lm)
+```
+
+
+
+### correlations among estimated parameters
+
+From your readings, you (hopefully) got a chance to examine the covariances or correlations among parameter estimates (not the observed data, but how correlated estimated values are to one another). Additionally we can examine the variance inflation factor (vif) and "kappa" $\kappa$ for the linear model to get a sense of what dependences among predictors in the design matrix (or due to unbalanced data).
+
+Below, we will see how bootstrapping can give us a real sense for what this means.
+
+```{r}
+cov2cor(vcov(observ.lm))
+
+par(mfrow = c(2,3))
+confidenceEllipse(observ.lm, which.coef = c(1,2))
+confidenceEllipse(observ.lm, which.coef = c(1,3))
+confidenceEllipse(observ.lm, which.coef = c(1,4))
+confidenceEllipse(observ.lm, which.coef = c(2,3))
+confidenceEllipse(observ.lm, which.coef = c(2,4))
+confidenceEllipse(observ.lm, which.coef = c(3,4))
+par(mfrow = c(1,1))
+
+
+vif(observ.lm)
+kappa.lm(observ.lm)
+```
+
+## Non-parametric bootstrap, pairs/random/case
+
+The first approach (and the most generally useful, although not as efficient) is called the pairs bootstrap, it is also know as the case (or case-wise) np bootstrap and even the "random" bootstrap.
+
+Here we are resampling each observation as an entire row, that is we are resampling both the response variable(s) and the predictor variable(s) as a "case".
+
+```{r}
+N = 5000 # number of bootstrap replicates
+```
+
+
+The function we want to write would look like this. Note we are sampling with replacement in the index of the data, which is a more general and easier approach.
+
+```{r}
+BootstrapRandomX <- function(dat = dll.data, mod.formula = formula(SCT ~ genotype*temp)){
+  
+  dat.boot <- dat[sample(x = nrow(dat), size = nrow(dat), replace=T),] # samples along index
+  
+  boot.lm <- lm(mod.formula, data=dat.boot)
+  coef(boot.lm)}
+```
+
+Run this a few times and see what it will do. how does it compare to the estimates generated on the observed data?
+
+
+```{r}
+BootstrapRandomX()
+BootstrapRandomX()
+BootstrapRandomX()
+
+coef(observ.lm)
+```
+
+
+### iterate
+run our N bootstraps
+
+```{r}
+vector.boot <- t(replicate(N, BootstrapRandomX()))
+```
+
+#### Standard deviation among the bootstrap iterations is an estimate of the standard error
+
+```{r}
+apply(vector.boot, MARGIN = 2, sd) 
+```
+
+We also want to evaluate the bias as determined by the bootstrap. This is just the difference between the estimated coefficient on the observed data and the mean of the bootstrap estimates. How might you calculate this?
+
+```{r}
+coef(observ.lm) - apply(vector.boot, MARGIN = 2, mean) 
+```
+
+
+### Let's visualize all of this.
+
+```{r}
+boot_mean <- apply(vector.boot, MARGIN = 2, mean) 
+observe_coef <- coef(observ.lm)
+
+par(mfrow=c(2,2))
+MultipleHistograms <- function(X = vector.boot){
+
+    for (i in 1:ncol(X)) {
+	    hist(X[,i], freq=F,
+	        main = colnames(X)[i],
+	        xlab = colnames(X)[i])
+      abline(v = observe_coef[i], col = "red", lty = 2, lwd = 2)
+      abline(v = boot_mean[i], col = "blue", lty = 3, lwd = 3)
+      }}
+
+MultipleHistograms()
+par(mfrow=c(1,1))
+```
+
+So for this model and data, very little evidence of bootstrap bias (so it is likely that almost all forms of bootstrap CI will behave well).
+
+### a nicer coefficient plot of this
+
+We can make a nice coefficient plot with the bootstrap distributions (like we did with the t-distribution using the standard errors and df from lm). We do need to reshape our data though.
+
+
+```{r}
+boot_vals <- as.data.frame(vector.boot)
+
+names(boot_vals)[1] <- "intercept"
+
+boot_vals <- gather(boot_vals,coefs, estimates, names(boot_vals), 
+                    factor_key = TRUE )
+
+head(boot_vals)
+
+with(boot_vals, table(coefs))
+```
+
+
+ Remember to exclude the rows for the intercept (we don't need to visualize it for the coefficient plot)
+ 
+```{r}
+ggplot(boot_vals[boot_vals$coefs != "intercept",], aes(y = coefs, x = estimates)) +
+  stat_halfeye() +
+  geom_vline(xintercept = 0, colour = "red", alpha = 0.5, linetype = 2) +
+  labs(title = "coefficient plot for the model", subtitle = "bootstrapped, intercept not plotted") +
+  ylab("model term") + xlab("coefficient estimate")
+```
+
+The distribution is that of the bootstrapped parameter values. Currently the CIs are just the percentile CIs and the "mean" is actually the bootstrap mean, not the original estimate from the call to lm from the observed data.  To be fixed.
+
+
+### covariance between parameter estimates.
+
+Let's go back to the point about the covariation between parameter estimates, and what it means. 
+
+Let's do a scatterplot with a dataEllipse between the bootstrap iterations for the estimates of the intercept and the "genotypeDll" term.
+
+```{r}
+dataEllipse(vector.boot[,1:2], 
+            col= rgb(0, 0, 1, 0.2), pch = 20) # used rgb so I can make points partially transparent
+
+cor(vector.boot[,1:2])
+```
+
+Compare this to what we examined from the output of lm above
+
+```{r}
+confidenceEllipse(observ.lm, which.coef = c(1, 2))
+cov2cor(vcov(observ.lm))
+```
+
+
+Let's look at them all
+
+```{r}
+cor(vector.boot)
+```
+
+```{r}
+pairs(vector.boot, 
+      col = rgb(0, 0, 1, alpha = 0.25))
+```
+
+
+Let's discuss what we are looking at.
+
+
+### confidence intervals from the case-wise bootstrap.
+and let us compare them to the asymptotic normal confidence intervals we have been using up to now.
+
+```{r}
+t(apply(vector.boot, MARGIN = 2, 
+        quantile, probs = c(0.025, 0.975)))
+
+confint(observ.lm)
+```
+
+
+The Percentile Confidence Intervals can be biased in some cases (see Efron and Tibshriani 1993). Therefore the stat gods developed the Bias-Corrected (BC) and accelerated (a) non-parametric bootstrap confidence intervals (BCa) to adjust for these biases. At the bottom of the script I show how to compute the BCa, but in general it is easier (but slower) to use the boot() function in the boot library. We will do an example with this library in a bit. The other option that is even better (in that it works better), but often requires bootstraps within bootstrap is the studentized "t" percentile intervals. This can take more work (but works well when other approaches do not). In the `bootstrap` library (not the `boot` library we are using) there is a `boott` function to perform this.
+
+
+## non-parametric bootstrap: Residual (Fixed "X") approach
+
+I think of this as half way between the non-parametric (pairs/random) bootstrap and the parametric (monte carlo) bootstrap, which we have not yet learned. The reason is that you end up using the fitted (deterministic) component of the model, but then you combine these with the empirical residuals. It is important to remember that the assumption of exchangeability among observations (in this case among residuals) is in play, unlike the pairs/random-x bootstrap. 
+
+For this particular model (with known genotypes and temperature) the fixed "X" assumption is met. BUT if we added the tarsus back in as a predictor (and given that it is measured with error as well) the fixed "X" assumption could be violated and so the residual bootstrap may not be appropriate.
+
+(Here we are performing an analysis analogous to what we did for Monte Carlo simulations to generate confidence intervals.- Note to BIO708, we have not done these yet, this is something we decided to skip)
+
+The steps for the residual bootstrap method:
+1. - Fit model (as normal)
+
+2. - Extract Residuals from the model
+
+3. - Bootstrap the residuals from the model (r')
+
+4. - add the boostrapped residuals (r') back onto the fitted component of the model. i.e.  y*[i] ~ a + bx[i] +r'[i] 
+
+5. using Y* refit the model, extract co-efficients
+
+6. - Repeat N times.
+
+### Extract residuals
+
+```{r}
+resid.model.1 <- resid(observ.lm)
+```
+
+
+```{r}
+plot(density(resid.model.1, bw = 0.5))
+```
+
+Reasonably normal looking residuals, though a long right tail. The results should be pretty comparable to the Monte Carlo approach.
+
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(resid.model.1 ~ dll.data$genotype)
+plot(resid.model.1 ~ dll.data$temp)
+```
+
+
+
+```{r}
+BootstrapFromResiduals <- function(mod.object = observ.lm, dat = dll.data) {
+	
+	resids = mod.object$resid # extracts residuals from model
+	fittedValues = mod.object$fitted # extracts fitted values
+	matr <- model.matrix(mod.object)
+	# generating new values for each y[i], by adding  bootstrapped resids to fitted values.
+	Y <- fittedValues + sample(resids, length(resids), replace = T) 
+	
+	# Using model.matrix for the predictors (not pretty, I know)
+	model.boot <- lm( Y ~ 0 + matr, data = dat ) # refit model with new Y values
+	
+	coef(model.boot) # Extract the co-efficients
+	}
+```
+
+
+```{r}
+residual.boot.N <- t(replicate(N, BootstrapFromResiduals()))
+```
+
+
+Check our results
+
+```{r}
+par(mfrow=c(2,2))
+MultipleHistograms(X = residual.boot.N)
+
+pairs(residual.boot.N, pch = 20, col = "#0000ff50")
+
+
+t(apply(residual.boot.N, MARGIN = 2, 
+        quantile, probs=c(0.025, 0.975)))
+
+confint(observ.lm)
+```
+
+## Chunk 6: Comparing distributions (expected and observed) for the coefficients
+
+Let's compare how we do with each of the methods we have used so far.
+1) Asymptotic normal (the standard way), #3) Pairs bootstrap #4) residual bootstrap.
+
+```{r}
+
+par(mfrow=c(1,1))
+plot(density(residual.boot.N[,3], bw=0.1), main="comparing bootstrap (and other) methods for parameter uncertainty", lwd=2, lty=2, xlab = "parameter estimate") #residual resampling
+lines(density(vector.boot[,3], bw=0.1), col="red", lwd=2, lty=2) # pairs bootstrap method
+```
+
+
+
+## Chunk 7: Using the boot library
+
+ 
+ The code I have written works just fine, but it does not correct for small biases which are known to occur with bootstrapped estimates. The library in R that can be used for bootstrapping is called boot. While the syntax for this library can be somewhat confusing, it is an extremely powerful and flexible library.
+
+
+ The R book (Crawley) gives some description of its uses ( pages 320-322, 418-421, 523 for generalized linear models & 681-683 for non-linear models). Also see the PDF o"Fox_appendix-bootstrapping" for a fair bit of detail.
+ The trick to using this library is to write a function call to get the coefficient (or whatever is of interest to you). The function call should have at least two arguments, the first being the values we want to resample (YourObjectToBeResampled), and the second argument being an index that is used by boot() to sample. It is somewhat slow though!
+
+Efron, B. and Tibshirani, R. (1993) An Introduction to the Bootstrap. Chapman & Hall.
+
+
+The basic arguments for it would look like:
+
+`boot(data = YourObjectToBeResampled, statistic = YourFunction, R = NumberResamplingEvents )`
+
+```{r}
+BootstrapFunctionRegression <- function(data = dll.data, index) {
+	data <- data[index,] # We will sample along rows of the data frame
+	model.boot <- lm( SCT ~ genotype*temp, data = data)
+	coef(model.boot)
+}
+```
+
+
+We can easily include the strata as well.
+```{r}
+bootstrappedModel <- boot(dll.data, 
+                          BootstrapFunctionRegression, 
+                          strata = strat_dat,
+                          R = 5000)
+bootstrappedModel
+```
+
+
+
+```{r}
+head(bootstrappedModel$t) # the bootstrapped samples
+
+# There are some plotting options for the bootstrap
+plot(bootstrappedModel, index = 1)
+
+
+plot(bootstrappedModel, index = 4)
+```
+
+
+```{r}
+boot.ci(bootstrappedModel, 
+    conf = 0.95, type = c("basic", "bca", "perc"), index = 1) # index for which coefficient...
+
+confint(observ.lm)
+```
+
+
+We can also examine the joint distribution of the intercept (i.e wild-type), and the coefficient for the mutant effect
+
+```{r}
+plot(bootstrappedModel$t[,1], bootstrappedModel$t[,2], 
+    xlab = "wild-type estimate", 
+    ylab= "treatment contrast for Dll", 
+    pch = 20, col = rgb(0,0,1, 0.5))
+```
+
+
+```{r}
+dataEllipse(bootstrappedModel$t[,1], bootstrappedModel$t[,2], 
+            xlab = "wild-type estimate", 
+    ylab= "treatment contrast for Dll", 
+    levels=c(0.5, 0.95, 0.99),
+    col = rgb(0,0,1, 0.5), pch = 20,
+    robust=T)
+```
+
+
+But the `car` library makes this even easier for linear models!
+Car has a function for bootstrapping linear models (`Boot`, `Confint`) that simplifies the use of boot
+
+```{r}
+car_boot <- Boot(observ.lm, strata = strat_dat, R = 5000)
+Confint(car_boot)
+```
+
+
+
+
+
+## A situation where the studentized bootstrap may make sense
+
+Here I am generating two variables that are highly correlated with each other.
+
+```{r}
+cor_dat_sim <- MASS::mvrnorm(n = 25, 
+              mu = c(10, 10),
+              Sigma =  matrix(c(10, 9.7, 9.7, 10), 2, 2) )
+
+
+colnames(cor_dat_sim) <- c("x1", "x2")
+
+cor(cor_dat_sim)
+
+cor.test(y = cor_dat_sim[,1], x = cor_dat_sim[,2])
+
+plot(cor_dat_sim)
+```
+
+What would bootstrap looking like for the confidence intervals?
+
+
+```{r}
+BootstrapRandomX_cor <- function(dat = cor_dat_sim ){
+  
+  dat.boot <- dat[sample(x = nrow(dat), size = nrow(dat), replace=T),] # samples along index
+  
+  cor(dat.boot[,1], dat.boot[,2])}
+```
+
+
+```{r}
+BootstrapRandomX_cor()
+
+cor_boot <- replicate(1000, BootstrapRandomX_cor())
+
+hist(cor_boot)
+```
+
+```{r}
+sd(cor_boot)
+
+observed_cor <- cor(cor_dat_sim[,1], cor_dat_sim[,2])
+
+#bias
+observed_cor - mean(cor_boot)
+
+quantile(cor_boot, probs = c(0.025, 0.975))
+```
+
+
+studentized bootstrap using the `boott` function in `bootstrap`
+
+```{r}
+xdata <- cor_dat_sim
+
+n <- nrow(xdata)
+
+theta <- function(x, xdata) { 
+  cor(xdata[x, 1], xdata[x, 2])}
+
+results <- bootstrap::boott(1:n, theta, xdata,
+                            nbootsd = 200, nboott = 1000)
+
+results
+```
+

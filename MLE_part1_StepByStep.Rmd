@@ -1,0 +1,403 @@
+---
+title: "Maximum Likelihood Estimation step by step"
+author: "Ian Dworkin"
+date: "`r format(Sys.time(),'%d %b %Y')`"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    number_sections: yes
+    keep_md: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 5)
+```
+
+# Maximum Likelihood Estimation, first steps
+
+this tutorial provides a step by step introduction to what likelihood is, how we compute it, and then how we find the maximum likelihood
+
+## The concept of likelihood.
+
+Let's start with a set of observations Y (y1,y2,..., yN)
+
+ In probability we generally think about the problem of having some random variable Y which is unknown, but some some probability function (like a normal distribution), where the parameters of the model (such as the mean and variance) are treated as "fixed" or "known"
+
+ Likelihood turns this idea around. Instead we think of the observed data Y as "known" but the parameters of the model as unknown. The basic principle of Maximum Likelihood estimation (MLE) is that we find estimates for the parameters (such as the mean and variance) that maximizes the likelihood given the observations.
+
+We can think about this in terms of probability. Given a sample of observations Y (y1, y2,...yN)  where each element of Y is independent of each other,  we need to find a solution that maximizes the likelihood of the joint probability function f(Y;parameters.). The estimates of the parameter values that satisfy this (maximization) are called the "Maximum Likelihood Estimators".
+
+
+There are two major points. First  L(parameters|Y) is proportional to p(Y|parameters), which as we will see below makes this tractable, since we know how to find the probabilities. Second we are not interested in the absolute likelihood or probability, but the relative probability. That is we want to find the set of parameters that provides the highest probability of the observations, given the observations themselves. 
+
+
+
+### So how do we go about computing our likelihoods.
+
+let's take a look at the first 10 observations of a data set for femur lengths from the fruit-fly *Drosophila melanogaster*
+
+```{r}
+femur.sample <- c(0.5903, 0.5504, 0.5884, 0.5956, 0.5767, 
+                  0.6183, 0.5817, 0.5725, 0.5680, 0.5554)
+
+mean(femur.sample)
+min(femur.sample)
+max(femur.sample)
+```
+
+
+ Maximum likelihood starts with the principle that we should compare the relative probabilities of the data, given a set of parameters.
+
+ But let's start by examining the likelihood for particular sets of parameters , given our data. Let us assume that  we think that we can describe these 10 observations by a normal distribution. Given a set of parameter values for the normal distribution ( a "mean" and a "variance") what will be the probability of getting these 10 observations? We can write out the normal distribution like so:
+ 
+Let us arbitrarily pick a number to be our first guess at the mean of our sample, I chose the min(femur.sample) which equals `r min(femur.sample)`. Let's also assume that the standard deviation = 1 (this value is not a good estimate, but for the moment that does not matter). We will see that our initial guess was not a good one, but we can  improve upon this using methods to find the MLE.
+
+Given the mean = 0.55, and the sd = 1 for our proposed distribution $\sim N(\mu = 0.55, \sigma = 1)$, what is the "probability" of an observation from our sample being 0.59 (which happens to be the first observation in our sample). 
+
+**Note: since this is a probability density we are examining the height of the density at this point, not the area under the curve, so it is approximate, but proportional to the probability in a region around 0.59. We are only interested in relative probabilities, so this is sufficient).**
+
+
+$$
+l(\theta|x = 0.59) \propto p(0.59|\theta) = p(0.59 | ~N(\mu = 0.55, \sigma = 1))
+$$
+
+```{r}
+dnorm(x = 0.5903, 
+      mean = 0.55, sd = 1) 
+
+# Same thing, just using the data vector
+dnorm(x = femur.sample[1], 
+      mean = 0.55, sd = 1) 
+```
+
+Let us now ask what the probability of observing 0.55, the second observation from our sample. i.e. `femur.sample[2]`.
+
+```{r}
+dnorm(x = femur.sample[2], 
+      mean = 0.55, sd = 1)
+```
+
+
+We of course are not particularly interested in the probability of observing each of these individual observations. But, we are (to start with) interested in the probability of observing both of them given our "candidate" distribution $\sim N(\mu = 0.55, \sigma = 1)$.
+ 
+ Since we treat each observation as independent of one another, the probability of observing both of them is found by multiplying each of the individual probabilities (joint probabilities).
+ 
+```{r}
+dnorm(x = femur.sample[1], mean = 0.55, sd = 1) * dnorm(x = femur.sample[2], mean = 0.55, sd = 1)
+```
+ 
+Of course `R` is vectorized so we can write this more compactly like this:
+ 
+```{r}
+dnorm(x = femur.sample[1:2], mean=0.55, sd=1)
+prod(dnorm(x = femur.sample[1:2], mean=0.55, sd=1))
+```
+ 
+Which uses the fact that R will compute each "probability" and then we use `prod` to multiply them together. 
+
+In mathematical notation what we are calculating as our likelihood is:
+
+$$
+\propto p(0.59 | ~N(\mu = 0.55, \sigma = 1)) *  p(0.55 | ~N(\mu = 0.55, \sigma = 1))
+$$
+
+The probability of observing all 10 of these observations (assuming they are independent) is just the product of the probabilities of each:
+
+```{r}
+sample.prob <- dnorm(x=femur.sample, mean = 0.55, sd = 1)
+prod(sample.prob)
+```
+
+this is the joint probability of observing our sample. Which is proportional to the likelihood. Since all we care about is the relative probabilities, this is enough. So we have computed the likelihood of the 10 observations in the `femur.sample` based on the candidate distribution of $\sim N(\mu = 0.55, \sigma = 1)$.
+
+
+We know that the values we guessed for the mean and standard deviation were probably not so good (since we used the minimum value of our observed values as our candidate mean.
+
+Let's calculate them the old fashion way (method of moments):
+
+```{r}
+mean(femur.sample)
+```
+
+ let's use this values for our second candidate distribution $\sim N(\mu = 0.58, \sigma = 0.5)$
+ 
+```{r}
+sample.prob.2 <- dnorm(x = femur.sample, mean = 0.58, sd = 0.5)
+prod(sample.prob.2)
+```
+ 
+The probability of observing the data seems with these estimates is definitely better. Congratulations! you have now calculated the likelihood of your data given estimates of your parameters. This is the principle of likelihood.
+
+But what we still need to do is find the actual maximum likelihood estimates...
+
+## Finding the Maximum Likelihood estimates.
+  
+We now move on to thinking about how we might calculate the MAXIMUM likelihood estimates. So our best estimate will be found by maximizing our objective below. This can be contrasted with the same approach we used for least square estimation where we minimized our objective function (which computed the residual sum of squares).
+
+Let's try a range of possible value for the mean of the distribution going from our minimum observed to maximum observed values in our data.
+ 
+ 
+```{r}
+mean.x <- seq(0.55, 0.61, by = 0.001)
+
+likelihood.x <- function(x) {
+  sample_prob_vals <- dnorm(x = femur.sample, mean = x, sd = 1)
+  prod(sample_prob_vals)}
+```
+
+As always it is worth making sure our function is doing what we expect. So making sure it gives us the same results as before
+
+```{r}
+likelihood.x(x = 0.55)
+prod(sample.prob) # Our result from earlier as a comparison.
+```
+ 
+ Just like we did for our "brute force" (grid approximation) for LSE, we will try each of these values for the mean in our objective function. Only this time we are interested in the maximum joint probabilities.
+ 
+```{r}
+lik.1 <- sapply(mean.x, likelihood.x)
+```
+ 
+`sapply` just feeds in each element from `mean.x` vector one at a time into the `prob.x` function. 
+
+```{r}
+plot(lik.1 ~ mean.x, 
+     type = "b", pch = 20,
+     ylab = "Likelihood", xlab = "candidate values of x")
+abline(v = mean.x[which.max(lik.1)], col = "red", lty = 2 )
+```
+
+Based on the candidate values we tested, the approximate MLE for the mean is at
+```{r}
+mean.x[which.max(lik.1)]
+```
+
+You can see from this that the approximate MLE for the mean = 0.58. The Methods of moments estimate using `mean` is also ~0.58. It is important to remember for this simple example that we did not try to also find the best value for the variance, and we are using a grid approximation. So in the next part of the tutorial we will also explore these.
+ 
+ We want to optimize the likelihood given the criteria of a maximum relative probability, which means the smallest -log likelihood.
+ 
+ 
+### REMEMEBER WE ARE ONLY INTERESTED IN THE RELATIVE LIKELIHOOD 
+
+
+Instead of using the `dnorm` function in `R` we could also write it out ourselves if we are masochists:
+
+$$
+\frac{1}{\sigma\sqrt{2 \pi}}e^{-\frac{1}{2}(\frac{x - \mu}{\sigma})^2}
+$$
+Which we can write this in R like so:
+
+```{r}
+normal_dist <- function(mean, std_dev,x) {
+	(1/(std_dev*sqrt(2*pi)))*exp( -(1/2) * ((x - mean)/std_dev)^2 )}
+```
+
+You may notice that the first part of the expression $\frac{1}{\sigma\sqrt{2 \pi}}$ does not depend upon $x$ (our observed data).
+
+For purposes of the approach we are using we can re-write this objective function without that part of the normal distribution since it will not alter the relative probabilities we are interested in.
+
+```{r}
+normal_dist2 <- function(mean, std_dev, x) {
+	exp( -(1/2) * ((x - mean)/std_dev)^2 )}
+```
+
+
+So we can compute our likelihood objective function as so 
+
+```{r}
+likelihood.x.2 <- function(mean = x, std_dev = 1, y = femur.sample) {
+  prod( exp( -(1/2) * ((y - mean)/std_dev)^2 ))}
+```
+
+
+And use this to compare it to our results with dnorm.
+
+```{r}
+lik.2 <- sapply(mean.x, likelihood.x.2)
+
+par(mfrow = c(1, 2))
+
+plot(lik.1 ~ mean.x, type="b", pch = 20, 
+     main = 'Likelihood curve using dnorm')
+abline(v = mean.x[which.max(lik.1)], col = "red", lty = 2 )
+
+plot(lik.2 ~ mean.x, type="b", pch = 20, 
+     main = 'Likelihood curve, no "constant"')
+abline(v = mean.x[which.max(lik.2)], col = "red", lty = 2 )
+
+par(mfrow = c(1, 1))
+```
+
+Despite the changes in the values for the likelihood, we still get the maximum value at the same value for the mean (around 0.58).
+
+Normally we don't need to worry about this too much, but it is worth remembering for complex functions that can be a pain to write out.
+
+## Log likelihood and Negative log Likelihoods
+
+Log Likelihood
+
+By convention and for practicality, we log transform individual probabilities (per observation). This allows us to add instead of multiplying them together, which is computationally more efficient. Also we don't end up getting a really small product (too small for the computer to work with).
+
+We use the flag `log = T` in `dnorm` which log transforms the probabilities (not the observed values!). Then we can add them together (`sum`) instead of multiplying them.
+
+
+```{r}
+log.likelihood.x <- function(x) {
+  sample.prob2 <- dnorm(x = femur.sample, mean = x, sd = 1, log = T)
+  sum(sample.prob2)}
+```
+
+
+We can do everything just like we did before.
+```{r}
+log.lik.1 <- sapply(mean.x, log.likelihood.x)
+
+par(mfrow = c(1, 2))
+
+plot(lik.1 ~ mean.x, type = "b", pch = 20,
+     main = 'Likelihood')
+abline(v = mean.x[which.max(lik.1)], col = "red", lty = 2 )
+
+plot(log.lik.1 ~ mean.x, type = "b", pch = 20,
+     main = 'Log Likelihood')
+abline(v = mean.x[which.max(log.lik.1)], col = "red", lty = 2 )
+
+par(mfrow = c(1, 1))
+```
+
+Another common convention is  to use the *negative log likelihood*, so that the smallest value (the minimum) represents the best estimate. 
+
+```{r}
+neg.log.likelihood.x <- function(x) {
+  sample.prob2 <- dnorm(x = femur.sample, mean = x, sd = 1, log = T)
+  -sum(sample.prob2) # Here is the negative sign
+  }
+```
+
+
+In which case we are looking for the minimim value, not the maximum. Note that I am using `which.min` here.
+
+```{r}
+neg.log.lik.1 <- sapply(mean.x, neg.log.likelihood.x)
+
+plot(neg.log.lik.1 ~ mean.x, type = "b", pch = 20,
+      main = '- Log Likelihood curve')
+abline(v = mean.x[which.min(neg.log.lik.1)], col = "red", lty = 2 )
+```
+
+Some people call this a "badness of fit" curve, since higher values mean worse fits. These all provide the same information, but by convention people use the log or negative log likelihood.
+
+Clearly there has to be a better way to find the maximum likelihood than this brute force approach... Which we will begin to look at in the next tutorial.
+
+## MLE (brute force) for multiple parameters
+
+This computes a likelihood surface over values sd and mean for a small set of data (femur lengths of Drosophila)
+
+Parameter range for computing likelihood by grid approximation
+
+```{r}
+mean.x <- seq(0.55,0.61, by=0.001)
+sd.x <- seq(0.01,0.04, by=0.00025)
+```
+
+```{r}
+lik.mean <- rep(NA, length(mean.x))
+
+lik.sd <- matrix(NA, length(mean.x), length(sd.x)) # initializing the matrix to store the log likelihoods
+```
+
+```{r}
+for (k in 1:length(sd.x))
+ {
+  
+  b_b <- sd.x[k]
+  
+   for (j in 1:length(mean.x))
+
+    {
+   
+      s_s = mean.x[j]
+      
+      sample.prob2 <- dnorm(x = femur.sample, mean = s_s, sd = b_b, log = T) 
+      lik.mean[j] <- sum(sample.prob2) 
+ 
+     }
+   
+    lik.sd[,k] <- lik.mean 
+   }
+```
+
+
+### Plotting
+
+Perspective plot:
+```{r}
+par(mfrow = c(1, 1))
+
+#3D
+persp(x = mean.x, y = sd.x, z = lik.sd, col = rgb(0,0,1,0.25), 
+    theta = 45, phi = 15, shade = 0.5, lphi = 40, 
+    xlab = "mean", ylab = "sd", zlab = "Log Likelihood", ticktype = "detailed")
+``` 
+ 
+Simple contour plot:
+```{r}
+contour(x = mean.x, y = sd.x, z = lik.sd, xlab = "Mean", 
+        ylab = "SD", 
+    levels = c(25, 24, 23, 22, 21, 20, 19, 18, 17), 
+    col = heat.colors(9), lwd = 2) 
+    # change the levels based on the likelihood, or just remove them entirely.
+```
+
+or 
+```{r}
+filled.contour(x = mean.x, y = sd.x, z = lik.sd, 
+    xlab = "Mean", ylab = "SD", levels = pretty(c(0, 27), 35))
+```
+
+### Using expand.grid & mapply to generate the likelihood surface
+
+Instead of using loops, you can do this in a more `R`ish way
+
+```{r}
+grid.lik <- expand.grid(mean.x, sd.x) # generates all possible combinations of the two vectors
+dim(grid.lik) # 7381 rows, by 2 columns 
+```
+
+```{r}
+lik.sd.mean <- function(mean, sd, data = femur.sample){
+	sample.prob2 <- dnorm(x = data, mean = mean, sd = sd, log = T) 
+  lik.mean <- sum(sample.prob2) }
+```
+
+Now we use `mapply` for all possible combination of candidate mean and sd values.
+
+```{r}
+likelihood.values <- mapply(lik.sd.mean, grid.lik[,1], grid.lik[,2])
+```
+
+We are inputting values from each row of all of the possible combinations of the sd and mean from the grid.lik object. The output vector (`likelihood.values`) contains all of the values for the likelihoods we have calculated.
+
+```{r}
+grid.lik.2 <- cbind(grid.lik, likelihood.values)
+names(grid.lik.2) <- c("mu", "sigma", "LogLik")
+
+grid.lik.2[which.max(grid.lik.2[,3]),] # quick way of finding approx MLE
+
+# The only problem with this approach is that you need to make the matrix of the likelihoods, which are otherwise just stored as a single vector
+grid.matrix <- matrix(data = likelihood.values, 
+                      nrow = length(mean.x), ncol = length(sd.x))
+```
+
+
+```{r}
+persp(x = mean.x, y = sd.x, z = grid.matrix, 
+      col = rgb(0,0,1, 0.5), theta = 45, phi = 15, shade = 0.5, lphi = 40,
+      xlab = "mean", ylab = "sd", zlab = "Log Likelihood", 
+      ticktype = "detailed")
+```
